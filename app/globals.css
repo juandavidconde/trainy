@@ -9,3 +9,24 @@
 body {
   @apply bg-surface text-neutral-100 antialiased;
 }
+
+@layer base {
+  /* En móvil los inputs con font-size <16px disparan zoom automático en iOS */
+  @media (max-width: 767px) {
+    input,
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

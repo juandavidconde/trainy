@@ -73,6 +73,7 @@ export default async function HistoryPage({
         </p>
       )}
 
+      <div className="grid gap-3 md:grid-cols-2">
       {weeks.map((week) => (
         <div key={week} className="rounded-2xl border border-neutral-800 bg-card p-4">
           <h2 className="mb-2 text-sm font-bold text-accent">
@@ -102,6 +103,7 @@ export default async function HistoryPage({
           </div>
         </div>
       ))}
+      </div>
     </div>
   );
 }
