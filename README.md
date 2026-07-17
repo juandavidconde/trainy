@@ -23,6 +23,10 @@ Next.js (App Router) · PostgreSQL · Prisma · NextAuth (Google opcional + emai
    - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — **opcional**; si no los ponés, la app usa email+password.
 5. Deploy. La primera cuenta que se registre queda como **coach**.
 
+## Instalar en el teléfono (PWA)
+
+La app es instalable: abrí tu instancia en el navegador del teléfono → menú → **"Agregar a pantalla de inicio"** (Android/Chrome) o **Compartir → "Añadir a pantalla de inicio"** (iOS/Safari). Queda como app independiente, pantalla completa.
+
 ## Desarrollo local
 
 ```bash
