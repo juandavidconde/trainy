@@ -27,7 +27,9 @@ export async function POST(req: NextRequest) {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const isFirst = (await prisma.user.count()) === 0;
+  // Mientras no exista un coach, quien se registre se vuelve coach
+  // (el import por API puede pre-crear atletas, no cuentan como "primero").
+  const coachExists = (await prisma.user.count({ where: { role: "COACH" } })) > 0;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -37,7 +39,11 @@ export async function POST(req: NextRequest) {
     }
     await prisma.user.update({
       where: { id: existing.id },
-      data: { passwordHash, name: body.name?.trim() || existing.name },
+      data: {
+        passwordHash,
+        name: body.name?.trim() || existing.name,
+        role: coachExists ? existing.role : "COACH",
+      },
     });
     return NextResponse.json({ ok: true });
   }
@@ -47,7 +53,7 @@ export async function POST(req: NextRequest) {
       email,
       passwordHash,
       name: body.name?.trim() || email.split("@")[0],
-      role: isFirst ? "COACH" : "ATHLETE",
+      role: coachExists ? "ATHLETE" : "COACH",
     },
   });
   return NextResponse.json({ ok: true });

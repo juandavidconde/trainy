@@ -33,10 +33,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   events: {
-    // El primer usuario de la instancia es el coach/admin.
+    // Mientras la instancia no tenga coach, quien entre se convierte en coach.
+    // (No usamos count==1 porque el import por API puede pre-crear atletas.)
     createUser: async ({ user }) => {
-      const count = await prisma.user.count();
-      if (count === 1 && user.id) {
+      const coachExists = (await prisma.user.count({ where: { role: "COACH" } })) > 0;
+      if (!coachExists && user.id) {
         await prisma.user.update({ where: { id: user.id }, data: { role: "COACH" } });
       }
     },
@@ -45,6 +46,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     jwt: async ({ token, user }) => {
       if (user?.id) token.id = user.id;
       return token;
+    },
+    signIn: async ({ user }) => {
+      // Cubre el caso de usuario pre-creado por API que entra por primera vez
+      // con Google (el adapter no dispara createUser porque el user ya existe).
+      const coachExists = (await prisma.user.count({ where: { role: "COACH" } })) > 0;
+      if (!coachExists && user.id) {
+        await prisma.user.update({ where: { id: user.id }, data: { role: "COACH" } });
+      }
+      return true;
     },
     session: async ({ session, token }) => {
       if (session.user && token.id) {
