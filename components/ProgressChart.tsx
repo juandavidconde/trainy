@@ -35,7 +35,7 @@ export default function ProgressChart({ series }: { series: ExerciseSeries[] }) 
       <select
         value={selectedId}
         onChange={(e) => setSelectedId(e.target.value)}
-        className="w-full rounded-xl border border-neutral-800 bg-card px-4 py-3 text-sm outline-none focus:border-accent"
+        className="h-11 w-full rounded-lg border border-line bg-card px-4 text-sm text-ink outline-none focus:border-volt"
       >
         {[...bySession.entries()].map(([session, items]) => (
           <optgroup key={session} label={session}>
@@ -48,36 +48,36 @@ export default function ProgressChart({ series }: { series: ExerciseSeries[] }) 
         ))}
       </select>
 
-      <div className="rounded-2xl border border-neutral-800 bg-card p-4">
-        <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-400">
+      <div className="rounded-lg border border-line bg-card p-4">
+        <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-ink-2">
           {selected.best && (
             <span>
-              Mejor: <span className="font-semibold text-neutral-200">{selected.best}</span>
+              Mejor: <span className="font-semibold text-ink">{selected.best}</span>
             </span>
           )}
           {selected.prBaseline && (
             <span>
-              PR base: <span className="font-semibold text-neutral-200">{selected.prBaseline}</span>
+              PR base: <span className="font-semibold text-ink">{selected.prBaseline}</span>
             </span>
           )}
         </div>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={selected.points} margin={{ left: -20, right: 8 }}>
-              <CartesianGrid stroke="#2a2e38" strokeDasharray="3 3" />
+              <CartesianGrid stroke="#232A25" strokeDasharray="3 3" />
               <XAxis
                 dataKey="week"
                 tickFormatter={(w) => `S${w}`}
-                stroke="#6b7280"
+                stroke="#737D75"
                 fontSize={11}
               />
-              <YAxis stroke="#6b7280" fontSize={11} domain={["auto", "auto"]} />
+              <YAxis stroke="#737D75" fontSize={11} domain={["auto", "auto"]} />
               <Tooltip
                 labelFormatter={(w) => `Semana ${w}`}
                 contentStyle={{
-                  backgroundColor: "#181b22",
-                  border: "1px solid #2a2e38",
-                  borderRadius: 12,
+                  backgroundColor: "#1B211C",
+                  border: "1px solid #3A443C",
+                  borderRadius: 8,
                   fontSize: 12,
                 }}
               />
@@ -86,18 +86,18 @@ export default function ProgressChart({ series }: { series: ExerciseSeries[] }) 
                 type="monotone"
                 dataKey="maxWeight"
                 name="Peso máx (kg)"
-                stroke="#4f8cff"
+                stroke="#C8F169"
                 strokeWidth={2}
-                dot={{ r: 3 }}
+                dot={{ r: 3, fill: "#C8F169", strokeWidth: 0 }}
               />
               <Line
                 type="monotone"
                 dataKey="est1rm"
                 name="1RM estimado"
-                stroke="#34d399"
+                stroke="#45D0E8"
                 strokeWidth={2}
-                strokeDasharray="5 4"
-                dot={{ r: 3 }}
+                strokeDasharray="6 5"
+                dot={{ r: 3, fill: "#45D0E8", strokeWidth: 0 }}
                 connectNulls
               />
             </LineChart>

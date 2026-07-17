@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Tu plan de entrenamiento, vivo.",
     start_url: "/today",
     display: "standalone",
-    background_color: "#0f1115",
-    theme_color: "#0f1115",
+    background_color: "#0D100E",
+    theme_color: "#0D100E",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
       {

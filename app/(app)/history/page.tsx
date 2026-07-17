@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { sessionColor, sessionChipStyle } from "@/lib/brand";
 
 export default async function HistoryPage({
   searchParams,
@@ -24,7 +25,7 @@ export default async function HistoryPage({
 
   if (!plan || plan.sessions.length === 0) {
     return (
-      <p className="mt-24 text-center text-sm text-neutral-400">
+      <p className="mt-24 text-center text-sm text-ink-2">
         Sin plan activo todavía.
       </p>
     );
@@ -48,18 +49,18 @@ export default async function HistoryPage({
     <div className="space-y-4">
       <h1 className="text-xl font-bold">Historial</h1>
 
-      <div className="flex gap-1.5 overflow-x-auto">
+      <div className="scrollbar-hide flex gap-1.5 overflow-x-auto">
         {plan.sessions.map((s) => {
           const active = s.id === selected.id;
-          const color = s.color ? `#${s.color}` : "#4f8cff";
+          const color = sessionColor(s.name, s.color);
           return (
             <Link
               key={s.id}
               href={`/history?session=${encodeURIComponent(s.name)}`}
-              className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-bold ${
-                active ? "text-white" : "bg-card text-neutral-400"
+              className={`flex h-11 shrink-0 items-center whitespace-nowrap rounded-lg border px-3.5 font-display text-[13px] font-bold uppercase tracking-widest ${
+                active ? "" : "border-transparent bg-card text-ink-3"
               }`}
-              style={active ? { backgroundColor: color } : undefined}
+              style={sessionChipStyle(color, active)}
             >
               {s.name}
             </Link>
@@ -68,18 +69,20 @@ export default async function HistoryPage({
       </div>
 
       {weeks.length === 0 && (
-        <p className="mt-12 text-center text-sm text-neutral-400">
+        <p className="mt-12 text-center text-sm text-ink-2">
           Nada loggeado en esta sesión todavía.
         </p>
       )}
 
       <div className="grid gap-3 md:grid-cols-2">
       {weeks.map((week) => (
-        <div key={week} className="rounded-2xl border border-neutral-800 bg-card p-4">
-          <h2 className="mb-2 text-sm font-bold text-accent">
+        <div key={week} className="rounded-lg border border-line bg-card p-4">
+          <h2 className="mb-2 text-sm font-bold text-volt">
             Semana {week}
             {plan.deloadWeeks.includes(week) && (
-              <span className="ml-2 text-[10px] text-yellow-400">DESCARGA</span>
+              <span className="ml-2 font-mono text-[10px] font-semibold tracking-widest text-warn">
+                DESCARGA
+              </span>
             )}
           </h2>
           <div className="space-y-2">
@@ -88,14 +91,14 @@ export default async function HistoryPage({
               if (!log || log.sets.length === 0) return null;
               return (
                 <div key={ex.id} className="text-sm">
-                  <p className="text-neutral-300">{ex.name}</p>
-                  <p className="font-mono text-xs text-neutral-500">
+                  <p className="text-ink-2">{ex.name}</p>
+                  <p className="font-mono text-xs tabular text-ink-3">
                     {log.sets
                       .map((s) => `${s.reps ?? "-"}·${s.weight ?? "-"}${s.done ? "✓" : ""}`)
                       .join("  ")}
                   </p>
                   {log.comment && (
-                    <p className="text-xs italic text-neutral-500">“{log.comment}”</p>
+                    <p className="text-xs italic text-ink-3">“{log.comment}”</p>
                   )}
                 </div>
               );

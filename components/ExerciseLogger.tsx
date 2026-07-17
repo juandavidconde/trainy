@@ -93,11 +93,11 @@ export default function ExerciseLogger({
   }
 
   const inputCls =
-    "h-11 min-w-0 rounded-lg border border-neutral-800 bg-surface px-1 text-center outline-none focus:border-accent md:h-10 md:text-sm";
+    "h-11 min-w-0 rounded border border-line bg-bg px-1 text-center font-mono font-semibold tabular text-ink outline-none placeholder:font-normal placeholder:text-ink-3 focus:border-volt focus:bg-raised md:h-10 md:text-sm";
 
   return (
     <div className="mt-3 space-y-2">
-      <div className="grid grid-cols-[1fr_1fr_3.2rem_2.9rem_1.4rem] items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+      <div className="grid grid-cols-[1fr_1fr_3.2rem_2.9rem_1.4rem] items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-ink-3">
         <span>Reps</span>
         <span>Peso</span>
         <span>RPE</span>
@@ -114,29 +114,29 @@ export default function ExerciseLogger({
             onChange={(e) => update(i, { reps: e.target.value })}
             inputMode="decimal"
             placeholder={prevSets[i]?.reps || "reps"}
-            className={inputCls}
+            className={`${inputCls} ${s.done ? "text-ink-2" : ""}`}
           />
           <input
             value={s.weight}
             onChange={(e) => update(i, { weight: e.target.value })}
             inputMode="decimal"
             placeholder={prevSets[i]?.weight || "peso"}
-            className={inputCls}
+            className={`${inputCls} ${s.done ? "text-ink-2" : ""}`}
           />
           <input
             value={s.rpe}
             onChange={(e) => update(i, { rpe: e.target.value })}
             inputMode="decimal"
             placeholder={prevSets[i]?.rpe || "—"}
-            className={inputCls}
+            className={`${inputCls} ${s.done ? "text-ink-2" : ""}`}
           />
           <button
             type="button"
             onClick={() => toggleDone(i)}
-            className={`mx-auto flex h-11 w-11 items-center justify-center rounded-lg border text-base md:h-10 md:w-10 ${
+            className={`mx-auto flex h-11 w-11 items-center justify-center rounded border text-base md:h-10 md:w-10 ${
               s.done
-                ? "border-emerald-500 bg-emerald-500/20 text-emerald-300"
-                : "border-neutral-700 text-neutral-600 active:border-neutral-500"
+                ? "border-volt bg-volt font-bold text-volt-ink"
+                : "border-line-strong text-ink-3 active:border-ink-3"
             }`}
             aria-label={s.done ? "Serie completada" : "Marcar serie completada"}
           >
@@ -150,7 +150,7 @@ export default function ExerciseLogger({
               );
               markDirty();
             }}
-            className="text-center text-neutral-600 hover:text-red-400"
+            className="text-center text-ink-3 hover:text-err"
             aria-label="Quitar serie"
           >
             ×
@@ -164,7 +164,7 @@ export default function ExerciseLogger({
           onClick={() => {
             setSets((prev) => [...prev, { ...EMPTY }]);
           }}
-          className="h-9 shrink-0 rounded-lg border border-dashed border-neutral-700 px-3 text-xs text-neutral-400"
+          className="h-9 shrink-0 rounded border border-dashed border-line-strong px-3 text-xs text-ink-2"
         >
           + serie
         </button>
@@ -175,7 +175,7 @@ export default function ExerciseLogger({
             markDirty();
           }}
           placeholder="Comentario…"
-          className="h-9 min-w-0 flex-1 rounded-lg border border-neutral-800 bg-surface px-3 outline-none focus:border-accent md:text-xs"
+          className="h-9 min-w-0 flex-1 rounded border border-line bg-bg px-3 text-ink outline-none placeholder:text-ink-3 focus:border-volt md:text-xs"
         />
         <button
           type="button"
@@ -183,18 +183,20 @@ export default function ExerciseLogger({
             if (timer.current) clearTimeout(timer.current);
             doSave();
           }}
-          className={`h-9 shrink-0 rounded-lg px-4 text-xs font-bold ${
+          className={`h-9 shrink-0 rounded px-4 text-xs font-bold ${
             status === "saved"
-              ? "bg-emerald-500/20 text-emerald-300"
-              : "bg-accent text-white"
+              ? "bg-ok/15 text-ok"
+              : "bg-volt text-volt-ink active:bg-volt-pressed"
           }`}
         >
           {status === "saving" ? "…" : status === "saved" ? "✓ Guardado" : "Guardar"}
         </button>
       </div>
-      {status === "error" && <p className="text-xs text-red-400">{errorMsg}</p>}
+      {status === "error" && <p className="text-xs text-err">{errorMsg}</p>}
       {status === "dirty" && (
-        <p className="text-right text-[10px] text-neutral-600">guardando en unos segundos…</p>
+        <p className="text-right font-mono text-[10px] text-ink-3">
+          guardando en unos segundos…
+        </p>
       )}
     </div>
   );

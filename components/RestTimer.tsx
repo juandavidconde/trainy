@@ -49,10 +49,12 @@ export default function RestTimer() {
             running.current = false;
             setRemaining(null);
           }}
-          className="rounded-full bg-accent px-5 py-3 font-mono text-base font-bold text-white shadow-xl"
+          className="rounded-xl border border-line-strong bg-raised px-5 py-3 font-display text-2xl font-bold tabular text-volt shadow-floating"
         >
           {Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, "0")}{" "}
-          <span className="text-xs opacity-70">✕</span>
+          <span className="align-middle font-mono text-xs font-normal text-ink-3">
+            ✕
+          </span>
         </button>
       ) : (
         <div className="flex gap-1.5">
@@ -60,7 +62,7 @@ export default function RestTimer() {
             <button
               key={s}
               onClick={() => start(s)}
-              className="rounded-full border border-neutral-700 bg-card px-3.5 py-2 text-xs font-semibold text-neutral-300 shadow-xl"
+              className="rounded-xl border border-line-strong bg-raised px-3.5 py-2 font-mono text-xs font-semibold text-ink-2 shadow-floating"
             >
               ⏱ {s === 90 ? "90s" : "2:30"}
             </button>

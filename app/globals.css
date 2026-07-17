@@ -7,10 +7,16 @@
 }
 
 body {
-  @apply bg-surface text-neutral-100 antialiased;
+  @apply bg-bg text-ink antialiased;
 }
 
 @layer base {
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+
   /* En móvil los inputs con font-size <16px disparan zoom automático en iOS */
   @media (max-width: 767px) {
     input,
@@ -28,5 +34,16 @@ body {
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Pill de semana de descarga — rayas diagonales sutiles */
+  .deload-stripes {
+    background: repeating-linear-gradient(
+      -45deg,
+      #151a16 0 6px,
+      #1b211c 6px 12px
+    );
   }
 }

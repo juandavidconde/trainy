@@ -46,20 +46,23 @@ export default function LoginForm({ googleEnabled }: { googleEnabled: boolean })
     }
   }
 
+  const inputCls =
+    "w-full rounded-lg border border-line bg-card px-4 py-3 text-ink outline-none placeholder:text-ink-3 focus:border-volt focus:bg-raised";
+
   return (
     <div className="space-y-4">
       {googleEnabled && (
         <>
           <button
             onClick={() => signIn("google", { callbackUrl: "/today" })}
-            className="w-full rounded-xl bg-white py-3 font-semibold text-neutral-900 active:scale-[0.98]"
+            className="w-full rounded-lg bg-ink py-3 font-semibold text-bg active:scale-[0.98]"
           >
             Entrar con Google
           </button>
-          <div className="flex items-center gap-3 text-xs text-neutral-500">
-            <div className="h-px flex-1 bg-neutral-800" />
+          <div className="flex items-center gap-3 font-mono text-[11px] uppercase tracking-wider text-ink-3">
+            <div className="h-px flex-1 bg-line" />
             o con email
-            <div className="h-px flex-1 bg-neutral-800" />
+            <div className="h-px flex-1 bg-line" />
           </div>
         </>
       )}
@@ -71,7 +74,7 @@ export default function LoginForm({ googleEnabled }: { googleEnabled: boolean })
             placeholder="Nombre"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-xl border border-neutral-800 bg-card px-4 py-3 outline-none focus:border-accent"
+            className={inputCls}
           />
         )}
         <input
@@ -80,7 +83,7 @@ export default function LoginForm({ googleEnabled }: { googleEnabled: boolean })
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-xl border border-neutral-800 bg-card px-4 py-3 outline-none focus:border-accent"
+          className={inputCls}
         />
         <input
           type="password"
@@ -89,13 +92,13 @@ export default function LoginForm({ googleEnabled }: { googleEnabled: boolean })
           placeholder="Contraseña (mín. 8)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-xl border border-neutral-800 bg-card px-4 py-3 outline-none focus:border-accent"
+          className={inputCls}
         />
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-err">{error}</p>}
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-xl bg-accent py-3 font-semibold text-white disabled:opacity-50 active:scale-[0.98]"
+          className="h-12 w-full rounded-lg bg-volt font-display font-bold text-volt-ink shadow-glow active:scale-[0.98] active:bg-volt-pressed disabled:opacity-50"
         >
           {busy ? "…" : mode === "login" ? "Entrar" : "Crear cuenta"}
         </button>
@@ -106,7 +109,7 @@ export default function LoginForm({ googleEnabled }: { googleEnabled: boolean })
           setMode(mode === "login" ? "register" : "login");
           setError(null);
         }}
-        className="w-full text-center text-sm text-neutral-400 underline-offset-4 hover:underline"
+        className="w-full text-center text-sm text-ink-2 underline-offset-4 hover:underline"
       >
         {mode === "login"
           ? "¿Primera vez? Crear cuenta"

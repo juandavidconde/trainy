@@ -55,9 +55,9 @@ export default function ImportPanel() {
   }
 
   return (
-    <div className="rounded-2xl border border-neutral-800 bg-card p-4">
+    <div className="rounded-lg border border-line bg-card p-4">
       <h2 className="text-sm font-bold">Importar desde el skill Trainy</h2>
-      <p className="mt-1 text-xs text-neutral-500">
+      <p className="mt-1 text-xs text-ink-3">
         Pegá el <code>plan.json</code> (bloque nuevo) o un{" "}
         <code>tracker_*.json</code> (historial) generado por el skill.
       </p>
@@ -69,8 +69,8 @@ export default function ImportPanel() {
               key={k}
               type="button"
               onClick={() => setKind(k)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${
-                kind === k ? "bg-accent text-white" : "bg-surface text-neutral-400"
+              className={`rounded px-3 py-1.5 font-mono text-xs font-semibold uppercase tracking-widest ${
+                kind === k ? "bg-volt text-volt-ink" : "bg-bg text-ink-3"
               }`}
             >
               {k === "plan" ? "Plan" : "Tracker"}
@@ -82,20 +82,20 @@ export default function ImportPanel() {
           placeholder="Email del atleta"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-xl border border-neutral-800 bg-surface px-4 py-2.5 text-sm outline-none focus:border-accent"
+          className="h-11 w-full rounded-lg border border-line bg-bg px-4 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-volt"
         />
         <textarea
           placeholder='{"nombre_bloque": …}'
           value={json}
           onChange={(e) => setJson(e.target.value)}
           rows={6}
-          className="w-full rounded-xl border border-neutral-800 bg-surface px-4 py-2.5 font-mono text-xs outline-none focus:border-accent"
+          className="w-full rounded-lg border border-line bg-bg px-4 py-2.5 font-mono text-xs text-ink outline-none placeholder:text-ink-3 focus:border-volt"
         />
         <button
           type="button"
           onClick={submit}
           disabled={busy || !email || !json}
-          className="w-full rounded-xl bg-accent py-2.5 text-sm font-bold text-white disabled:opacity-40"
+          className="h-11 w-full rounded-lg bg-volt text-sm font-bold text-volt-ink active:bg-volt-pressed disabled:opacity-40"
         >
           {busy ? "Importando…" : "Importar"}
         </button>

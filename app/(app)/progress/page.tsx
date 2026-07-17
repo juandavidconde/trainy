@@ -37,7 +37,7 @@ export default async function ProgressPage() {
 
   if (!plan) {
     return (
-      <p className="mt-24 text-center text-sm text-neutral-400">
+      <p className="mt-24 text-center text-sm text-ink-2">
         Sin plan activo todavía.
       </p>
     );
@@ -91,7 +91,7 @@ export default async function ProgressPage() {
     <div className="space-y-4">
       <h1 className="text-xl font-bold">Progreso</h1>
       {series.length === 0 ? (
-        <p className="mt-12 text-center text-sm text-neutral-400">
+        <p className="mt-12 text-center text-sm text-ink-2">
           Loggeá algunas sesiones para ver tu progresión acá.
         </p>
       ) : (

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { currentUser } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { sessionColor } from "@/lib/brand";
 
 export default async function CoachUserPage({
   params,
@@ -38,12 +39,12 @@ export default async function CoachUserPage({
 
   return (
     <div className="space-y-4">
-      <Link href="/coach" className="text-sm text-accent">
+      <Link href="/coach" className="text-sm text-volt">
         ← Coach
       </Link>
       <div>
         <h1 className="text-xl font-bold">{athlete.name ?? athlete.email}</h1>
-        <p className="text-xs text-neutral-400">
+        <p className="text-xs text-ink-2">
           {plan ? `${plan.name} · ${plan.split ?? ""}` : "Sin plan activo"}
         </p>
       </div>
@@ -59,21 +60,24 @@ export default async function CoachUserPage({
         return (
           <div
             key={session.id}
-            className="rounded-2xl border border-neutral-800 bg-card p-4"
+            className="rounded-lg border border-line bg-card p-4"
+            style={{
+              borderLeft: `3px solid ${sessionColor(session.name, session.color)}`,
+            }}
           >
             <h2
-              className="text-sm font-bold"
-              style={{ color: session.color ? `#${session.color}` : undefined }}
+              className="text-sm font-bold uppercase tracking-widest"
+              style={{ color: sessionColor(session.name, session.color) }}
             >
               {session.name}
               {lastWeek && (
-                <span className="ml-2 text-xs font-normal text-neutral-500">
+                <span className="ml-2 font-sans text-xs font-normal normal-case tracking-normal text-ink-3">
                   última: S{lastWeek} · {weeks.length} semana(s) loggeada(s)
                 </span>
               )}
             </h2>
             {!lastWeek && (
-              <p className="mt-1 text-xs text-neutral-500">Sin logs todavía.</p>
+              <p className="mt-1 text-xs text-ink-3">Sin logs todavía.</p>
             )}
             {lastWeek && (
               <div className="mt-2 space-y-2">
@@ -82,8 +86,8 @@ export default async function CoachUserPage({
                   if (!log || log.sets.length === 0) return null;
                   return (
                     <div key={ex.id} className="text-sm">
-                      <p className="text-neutral-300">{ex.name}</p>
-                      <p className="font-mono text-xs text-neutral-500">
+                      <p className="text-ink-2">{ex.name}</p>
+                      <p className="font-mono text-xs tabular text-ink-3">
                         {log.sets
                           .map(
                             (s) =>
@@ -92,7 +96,7 @@ export default async function CoachUserPage({
                           .join("  ")}
                       </p>
                       {log.comment && (
-                        <p className="text-xs italic text-neutral-500">
+                        <p className="text-xs italic text-ink-3">
                           “{log.comment}”
                         </p>
                       )}
