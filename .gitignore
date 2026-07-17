@@ -17,3 +17,4 @@ prisma/*.db
 # misc
 .DS_Store
 *.log
+tsconfig.tsbuildinfo
