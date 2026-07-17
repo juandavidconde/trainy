@@ -1,0 +1,154 @@
+// Trainy — esquema de datos
+// Modelo compatible 1:1 con el vocabulario del skill Trainy:
+// plan.json (bloque → sesiones → ejercicios con progresión/tempo/notas)
+// y tracker_*.json (sets con reps/peso/RPE/done por semana).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Usuarios y auth (NextAuth) ────────────────────────────────
+
+enum Role {
+  COACH
+  ATHLETE
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String? // solo si usa login con credenciales
+  role          Role      @default(ATHLETE)
+  accounts      Account[]
+  sessions      Session[]
+  plans         Plan[]
+  logs          WorkoutLog[]
+  createdAt     DateTime  @default(now())
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ── Plan de entrenamiento (bloque) ────────────────────────────
+
+enum PlanStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model Plan {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String // "May-Ago 2026"
+  objective   String? // "Recomposición (runner)"
+  split       String? // "FULL BODY 3x · ÉNFASIS ROTATIVO"
+  startDate   DateTime?
+  daysPerWeek Int?
+  sessionTime String? // "50-60 min"
+  weeks       Int           @default(12)
+  deloadWeeks Int[]         @default([]) // semanas de descarga, ej. [6, 12]
+  calendar    Json? // {"Lunes": "TRACCIÓN", ...}
+  sourceJson  Json? // plan.json original del skill, para trazabilidad
+  status      PlanStatus    @default(ACTIVE)
+  sessions    PlanSession[]
+  createdAt   DateTime      @default(now())
+
+  @@index([userId, status])
+}
+
+model PlanSession {
+  id        String     @id @default(cuid())
+  planId    String
+  plan      Plan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  name      String // "TRACCIÓN"
+  color     String? // hex sin #, ej. "1F3864"
+  dayOfWeek String? // "Lunes"
+  subtitle  String?
+  order     Int        @default(0)
+  exercises Exercise[]
+}
+
+model Exercise {
+  id          String       @id @default(cuid())
+  sessionId   String
+  session     PlanSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  name        String
+  progression String? // COMPOUND | HYPER | LIGHT | AMRAP_MYO
+  startWeight String? // "50 kg", "BW · AMRAP", "14 kg c/u"
+  tempo       String? // "3-1-1-0"
+  notes       String?
+  prBaseline  String? // PR conocido al armar el bloque, ej. "8x65 kg"
+  order       Int          @default(0)
+  logs        WorkoutLog[]
+}
+
+// ── Registro de entrenamientos ────────────────────────────────
+
+model WorkoutLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseId String
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  week       Int // semana del bloque, 1-indexed
+  date       DateTime?
+  comment    String?
+  sets       SetLog[]
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, exerciseId, week])
+  @@index([userId, week])
+}
+
+model SetLog {
+  id       String     @id @default(cuid())
+  logId    String
+  log      WorkoutLog @relation(fields: [logId], references: [id], onDelete: Cascade)
+  setIndex Int // 0-based
+  reps     String? // string crudo: "12", "AMRAP", "5-9"
+  weight   String? // string crudo: "120", "BW", "14 c/u"
+  rpe      String?
+  done     Boolean    @default(false)
+
+  @@unique([logId, setIndex])
+}

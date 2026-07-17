@@ -1,0 +1,19 @@
+# deps
+node_modules/
+
+# next
+.next/
+out/
+next-env.d.ts
+
+# env — nunca commitear secretos
+.env
+.env.local
+.env*.local
+
+# prisma
+prisma/*.db
+
+# misc
+.DS_Store
+*.log
