@@ -104,6 +104,7 @@ Ajustes por deporte activo (OBLIGATORIOS si aplica):
 
 ## Reglas duras
 - Sesiones con nombres en MAYÚSCULAS. Si el split es PPL+UL usá: PUSH, PULL, LEGS, UPPER, LOWER. Full body: FULL A, FULL B, FULL C. Upper/Lower x2: UPPER A, LOWER A, UPPER B, LOWER B.
+- NUNCA definas una sesión sin ejercicios. Si un día repite una sesión (ej. Full Body A/B/A), definí la sesión UNA vez y repetí su nombre en el calendario (Lunes: FULL A, Viernes: FULL A) — no inventes "FULL A2".
 - calendario: los 7 días (Lunes a Domingo), sesiones asignadas según preferencia del atleta y recuperación (no LEGS el día después de LOWER); los libres = "DESCANSO".
 - subtitulo: grupos musculares de la sesión.
 - Todo en español. Nombres de ejercicios claros de gym ("Press inclinado barra (30-45°)", "Remo Pendlay", "Hip thrust barra").
@@ -170,6 +171,23 @@ export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson
   plan.descargas = [6, 12];
   plan.fecha_inicio = nextMonday();
   plan.usuario = nombre ?? undefined;
+
+  // Saneo: el modelo a veces crea una sesión vacía para "repetir" otra
+  // (ej. "FULL A2" sin ejercicios). Se elimina y el calendario apunta a la hermana.
+  for (const [name, s] of Object.entries(plan.sesiones ?? {})) {
+    if (s.ejercicios && s.ejercicios.length > 0) continue;
+    delete plan.sesiones[name];
+    const base = name.replace(/\s*\d+$/, "").trim();
+    const sibling = Object.keys(plan.sesiones).find(
+      (k) => k === base || k.replace(/\s*\d+$/, "").trim() === base
+    );
+    if (plan.calendario) {
+      for (const [dia, ses] of Object.entries(plan.calendario)) {
+        if (ses === name) plan.calendario[dia] = sibling ?? "DESCANSO";
+      }
+    }
+  }
+
   if (!plan.nombre_bloque || !plan.sesiones || Object.keys(plan.sesiones).length === 0) {
     throw new Error("Plan generado inválido");
   }
