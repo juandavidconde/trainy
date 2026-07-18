@@ -15,6 +15,7 @@ export default async function AppLayout({
     { href: "/today", label: "Hoy", icon: "dumbbell" },
     { href: "/history", label: "Historial", icon: "calendar" },
     { href: "/progress", label: "Progreso", icon: "chart" },
+    { href: "/guide", label: "Guía", icon: "book" },
     ...(aiCoachEnabled()
       ? [{ href: "/ai", label: "Coach IA", icon: "spark" as const }]
       : []),

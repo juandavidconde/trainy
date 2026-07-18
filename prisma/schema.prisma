@@ -36,6 +36,16 @@ model User {
   createdAt     DateTime  @default(now())
 }
 
+// ── Guía de ejercicios (compartida entre usuarios, sin datos personales) ──
+
+model ExerciseGuide {
+  id        String   @id @default(cuid())
+  nameKey   String   @unique // nombre normalizado (lowercase, sin acentos)
+  name      String // nombre display original
+  howTo     String   @db.Text // técnica generada por el coach (markdown ligero)
+  createdAt DateTime @default(now())
+}
+
 // ── Coach IA ──────────────────────────────────────────────────
 
 model ChatMessage {
