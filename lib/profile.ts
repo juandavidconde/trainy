@@ -9,6 +9,8 @@ export interface AthleteProfile {
   objetivo?: string;
   experiencia?: string;
   lesiones?: string;
+  deporte?: string;
+  prs?: string;
   notas?: string;
 }
 
@@ -26,6 +28,8 @@ export const PROFILE_FIELDS: {
   { key: "objetivo", label: "Objetivo", placeholder: "Hipertrofia / recomposición / fuerza", required: true },
   { key: "experiencia", label: "Experiencia", placeholder: "8 años entrenando, nivel avanzado", required: true },
   { key: "lesiones", label: "Lesiones o molestias", placeholder: "Molestia en hombro izquierdo con press tras nuca. Ninguna → escribí \"ninguna\"", required: true, long: true },
+  { key: "deporte", label: "Otro deporte que practiques", placeholder: "Running 20 km/sem, fútbol los sábados... Ninguno → escribí \"ninguno\"", required: false, long: true },
+  { key: "prs", label: "PRs conocidos", placeholder: "Banca 8×135 lb, sentadilla 10×185 lb, dominadas 12×BW...", required: false, long: true },
   { key: "notas", label: "Notas para el coach", placeholder: "Preferencias, horarios, equipo disponible, suplementación...", required: false, long: true },
 ];
 

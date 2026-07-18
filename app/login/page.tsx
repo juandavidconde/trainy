@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth, googleEnabled } from "@/auth";
+import { otpEnabled } from "@/lib/otp";
 import LoginForm from "@/components/LoginForm";
 
 export default async function LoginPage() {
@@ -16,7 +17,7 @@ export default async function LoginPage() {
           Tu plan de entrenamiento, vivo.
         </p>
       </div>
-      <LoginForm googleEnabled={googleEnabled} />
+      <LoginForm googleEnabled={googleEnabled} otpEnabled={otpEnabled()} />
     </main>
   );
 }

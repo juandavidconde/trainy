@@ -48,7 +48,7 @@ function currentWeek(startDate: Date | null, weeks: number): number {
 export default async function TodayPage({
   searchParams,
 }: {
-  searchParams: Promise<{ week?: string; session?: string }>;
+  searchParams: Promise<{ week?: string; session?: string; skip?: string }>;
 }) {
   const user = await currentUser();
   if (!user) redirect("/login");
@@ -65,6 +65,14 @@ export default async function TodayPage({
   });
 
   if (!plan || plan.sessions.length === 0) {
+    // Usuario recién llegado sin perfil → onboarding (salvo que lo haya saltado)
+    if (!sp.skip) {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { profile: true },
+      });
+      if (!dbUser?.profile) redirect("/onboarding");
+    }
     return (
       <div className="mt-24 text-center text-ink-2">
         <p className="text-3xl">🏋️</p>
@@ -72,8 +80,14 @@ export default async function TodayPage({
           Todavía no tenés un plan
         </p>
         <p className="mt-1 text-sm">
-          Pedile a tu coach que importe tu bloque, o corré el skill Trainy.
+          Armá el tuyo respondiendo unas preguntas, o pedile tu bloque a tu coach.
         </p>
+        <a
+          href="/onboarding"
+          className="mt-5 inline-block rounded-lg bg-volt px-6 py-3 font-display font-bold text-volt-ink shadow-glow active:bg-volt-pressed"
+        >
+          Crear mi plan
+        </a>
       </div>
     );
   }

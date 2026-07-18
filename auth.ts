@@ -31,6 +31,33 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return { id: user.id, email: user.email, name: user.name, image: user.image };
       },
     }),
+    // Login con código enviado al correo (recuperación / acceso sin contraseña).
+    // Si el email no existe, crea la cuenta: el código YA probó posesión del correo.
+    Credentials({
+      id: "otp",
+      credentials: { email: {}, code: {} },
+      authorize: async (creds) => {
+        const email = String(creds?.email ?? "").trim().toLowerCase();
+        const code = String(creds?.code ?? "");
+        if (!email || !code) return null;
+        const { verifyLoginCode } = await import("@/lib/otp");
+        const valid = await verifyLoginCode(email, code);
+        if (!valid) return null;
+        let user = await prisma.user.findUnique({ where: { email } });
+        if (!user) {
+          const coachExists =
+            (await prisma.user.count({ where: { role: "COACH" } })) > 0;
+          user = await prisma.user.create({
+            data: {
+              email,
+              emailVerified: new Date(),
+              role: coachExists ? "ATHLETE" : "COACH",
+            },
+          });
+        }
+        return { id: user.id, email: user.email, name: user.name, image: user.image };
+      },
+    }),
   ],
   events: {
     // Mientras la instancia no tenga coach, quien entre se convierte en coach.

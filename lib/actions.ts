@@ -74,6 +74,17 @@ export async function saveLog(
   return { ok: true };
 }
 
+export async function saveName(
+  name: string
+): Promise<{ ok: boolean; error?: string }> {
+  const user = await currentUser();
+  if (!user) return { ok: false, error: "No autenticado" };
+  const clean = (name ?? "").trim().slice(0, 80);
+  if (!clean) return { ok: false, error: "Nombre vacío" };
+  await prisma.user.update({ where: { id: user.id }, data: { name: clean } });
+  return { ok: true };
+}
+
 export async function saveProfile(
   profile: AthleteProfile
 ): Promise<{ ok: boolean; error?: string }> {
