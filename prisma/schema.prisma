@@ -27,11 +27,26 @@ model User {
   image         String?
   passwordHash  String? // solo si usa login con credenciales
   role          Role      @default(ATHLETE)
+  profile       String?   @db.Text // perfil libre para el Coach IA: edad, objetivo, lesiones, historial
   accounts      Account[]
   sessions      Session[]
   plans         Plan[]
   logs          WorkoutLog[]
+  chatMessages  ChatMessage[]
   createdAt     DateTime  @default(now())
+}
+
+// ── Coach IA ──────────────────────────────────────────────────
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String // "user" | "assistant"
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Account {

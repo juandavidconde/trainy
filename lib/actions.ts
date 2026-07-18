@@ -72,3 +72,17 @@ export async function saveLog(
   revalidatePath("/progress");
   return { ok: true };
 }
+
+export async function saveProfile(
+  profile: string
+): Promise<{ ok: boolean; error?: string }> {
+  const user = await currentUser();
+  if (!user) return { ok: false, error: "No autenticado" };
+  const text = (profile ?? "").trim().slice(0, 4000);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { profile: text || null },
+  });
+  revalidatePath("/ai");
+  return { ok: true };
+}

@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 export interface NavItem {
   href: string;
   label: string;
-  icon: "dumbbell" | "calendar" | "chart" | "users";
+  icon: "dumbbell" | "calendar" | "chart" | "users" | "spark";
 }
 
 function Icon({ name, active }: { name: NavItem["icon"]; active: boolean }) {
@@ -38,6 +38,13 @@ function Icon({ name, active }: { name: NavItem["icon"]; active: boolean }) {
         <svg className={cls} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round">
           <circle cx="9" cy="8" r="3.5" />
           <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5a3.5 3.5 0 0 1 0 7M21 20c0-2.8-1.9-5.1-4.5-5.8" />
+        </svg>
+      );
+    case "spark":
+      return (
+        <svg className={cls} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" />
+          <path d="M19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9L19 16z" />
         </svg>
       );
   }

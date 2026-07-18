@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { currentUser } from "@/auth";
 import SignOutButton from "@/components/SignOutButton";
 import { DesktopNav, BottomNav, NavItem } from "@/components/NavBar";
+import { aiCoachEnabled } from "@/lib/coach-ai";
 
 export default async function AppLayout({
   children,
@@ -14,8 +15,11 @@ export default async function AppLayout({
     { href: "/today", label: "Hoy", icon: "dumbbell" },
     { href: "/history", label: "Historial", icon: "calendar" },
     { href: "/progress", label: "Progreso", icon: "chart" },
+    ...(aiCoachEnabled()
+      ? [{ href: "/ai", label: "Coach IA", icon: "spark" as const }]
+      : []),
     ...(user.role === "COACH"
-      ? [{ href: "/coach", label: "Coach", icon: "users" as const }]
+      ? [{ href: "/coach", label: "Atletas", icon: "users" as const }]
       : []),
   ];
 
