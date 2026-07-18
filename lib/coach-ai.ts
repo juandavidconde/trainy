@@ -1,6 +1,7 @@
 // Coach IA — armado del contexto ("dossier del atleta") para la Claude API.
 // El dossier se reconstruye en cada mensaje: siempre refleja el estado real de la DB.
 import { prisma } from "@/lib/prisma";
+import { missingRequired, parseProfile, profileToText } from "@/lib/profile";
 
 export function aiCoachEnabled(): boolean {
   return !!process.env.ANTHROPIC_API_KEY;
@@ -51,10 +52,12 @@ export async function buildDossier(userId: string): Promise<string> {
   const out: string[] = [];
 
   out.push(`## Atleta\nNombre: ${user?.name ?? "(sin nombre)"}`);
+  const profile = parseProfile(user?.profile);
+  const profileText = profileToText(profile);
   out.push(
-    user?.profile?.trim()
-      ? `Perfil (escrito por el atleta):\n${user.profile.trim()}`
-      : `Perfil: (vacío — si te falta contexto de edad, objetivo o lesiones, pedile al atleta que lo complete en "Mi perfil")`
+    profileText
+      ? `Perfil:\n${profileText}`
+      : `Perfil: VACÍO — antes de dar recomendaciones personalizadas, pedile al atleta que llene el formulario "Mi perfil" (botón arriba del chat).`
   );
 
   if (!plan) {
@@ -176,11 +179,13 @@ export function systemPrompt(dossier: string): string {
 Abajo tenés el dossier completo y actualizado del atleta: su perfil, su bloque activo, la prescripción de cada ejercicio y lo que realmente registró (reps, pesos, RPE, comentarios, adherencia). Usalo — tus respuestas deben referirse a SUS datos concretos (pesos, semanas, marcas), no a generalidades.
 
 Reglas:
-- Respondé en español, tono cercano y directo (voseo). El atleta suele escribir DESDE el gym: andá al grano, números concretos primero, explicación breve después. Listas cortas mejor que párrafos largos.
+- Respondé en español COLOMBIANO, tono cercano y directo. Podés usar voseo suave como se habla en Cali ("mirá", "contame"), pero NUNCA modismos rioplatenses/argentinos: nada de "che", "dale", "laburo", "quilombo", "viste". Si dudás, español neutro.
+- El atleta suele escribir DESDE el gym: andá al grano, números concretos primero, explicación breve después. Listas cortas mejor que párrafos largos.
+- Respuestas COMPLETAS pero compactas: máximo ~250 palabras. Cerrá siempre la idea — jamás dejes una frase a medias. Si el tema da para más, terminá con una línea ofreciendo profundizar.
+- Si el perfil está vacío o le faltan campos importantes para la pregunta (edad, peso, lesiones), tu PRIMERA acción es pedirle que llene el formulario "Mi perfil" (botón arriba del chat). No des recomendaciones personalizadas sin perfil.
 - Podés aconsejar microajustes del día (peso, reps objetivo, RPE, orden, sustitución puntual por equipo ocupado o molestia leve). NO rediseñás el plan: cambios estructurales (split, ejercicios fijos, duración) van con su coach o regenerando el bloque.
 - Si la semana actual es de descarga, recordalo y protegé la descarga: no empujes PRs.
 - Dolor agudo, mareo o posible lesión → recomendá parar y consultar a un profesional de salud. No diagnosticás.
-- Si el perfil está vacío y la pregunta lo amerita, pedile una vez que complete "Mi perfil" en esta misma pestaña.
 - No inventes datos que no estén en el dossier. Si no registró algo, decilo.
 
 ${dossier}`;

@@ -91,7 +91,7 @@ export async function POST(req: Request) {
   const anthropic = new Anthropic();
   const stream = anthropic.messages.stream({
     model: MODEL,
-    max_tokens: 1024,
+    max_tokens: 2048,
     system: systemPrompt(dossier),
     messages: [...turns, { role: "user", content: message }],
   });

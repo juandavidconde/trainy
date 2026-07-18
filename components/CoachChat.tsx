@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { saveProfile } from "@/lib/actions";
+import { AthleteProfile, PROFILE_FIELDS, missingRequired } from "@/lib/profile";
 
 interface Msg {
   id: string;
@@ -27,13 +28,20 @@ function RichText({ text }: { text: string }) {
   );
 }
 
-export default function CoachChat({ initialProfile }: { initialProfile: string }) {
+export default function CoachChat({
+  initialProfile,
+}: {
+  initialProfile: AthleteProfile;
+}) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showProfile, setShowProfile] = useState(false);
-  const [profile, setProfile] = useState(initialProfile);
+  // Si el perfil está incompleto, el formulario arranca abierto
+  const [showProfile, setShowProfile] = useState(
+    missingRequired(initialProfile).length > 0
+  );
+  const [profile, setProfile] = useState<AthleteProfile>(initialProfile);
   const [profileSaved, setProfileSaved] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const loaded = useRef(false);
@@ -137,23 +145,59 @@ export default function CoachChat({ initialProfile }: { initialProfile: string }
 
       {showProfile && (
         <div className="mt-3 rounded-lg border border-line bg-surface p-4">
-          <p className="mb-2 text-sm text-ink-2">
-            Contale al coach quién sos: edad, objetivo, lesiones o molestias,
-            historial de entrenamiento, preferencias. Lo tiene presente en cada
-            respuesta.
+          <p className="mb-3 text-sm text-ink-2">
+            El coach usa esto en cada respuesta. Si generaste tu plan con el
+            skill Trainy, puede venir pre-llenado — revisalo y completá lo que
+            falte.
           </p>
-          <textarea
-            value={profile}
-            onChange={(e) => setProfile(e.target.value)}
-            rows={5}
-            maxLength={4000}
-            placeholder="Ej: 38 años, objetivo recomposición. Molestia ocasional en hombro izquierdo con press tras nuca..."
-            className="w-full rounded border border-line bg-bg p-3 text-[15px] text-ink outline-none focus:border-volt"
-          />
-          <div className="mt-2 flex justify-end">
+          <div className="grid grid-cols-2 gap-2">
+            {PROFILE_FIELDS.filter((f) => !f.long).map((f) => (
+              <label key={f.key} className="block">
+                <span className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-ink-3">
+                  {f.label}
+                  {f.required && <span className="text-volt"> *</span>}
+                </span>
+                <input
+                  value={profile[f.key] ?? ""}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, [f.key]: e.target.value }))
+                  }
+                  placeholder={f.placeholder}
+                  maxLength={600}
+                  className="h-11 w-full rounded border border-line bg-bg px-3 text-[15px] text-ink outline-none placeholder:text-ink-3/60 focus:border-volt"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-2 space-y-2">
+            {PROFILE_FIELDS.filter((f) => f.long).map((f) => (
+              <label key={f.key} className="block">
+                <span className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-ink-3">
+                  {f.label}
+                  {f.required && <span className="text-volt"> *</span>}
+                </span>
+                <textarea
+                  value={profile[f.key] ?? ""}
+                  onChange={(e) =>
+                    setProfile((p) => ({ ...p, [f.key]: e.target.value }))
+                  }
+                  placeholder={f.placeholder}
+                  rows={2}
+                  maxLength={600}
+                  className="w-full rounded border border-line bg-bg p-3 text-[15px] text-ink outline-none placeholder:text-ink-3/60 focus:border-volt"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-ink-3">
+              {missingRequired(profile).length > 0
+                ? `Falta: ${missingRequired(profile).join(", ")}`
+                : "Perfil completo ✓"}
+            </p>
             <button
               onClick={submitProfile}
-              className="h-10 rounded bg-volt px-5 font-display text-sm font-bold text-volt-ink active:bg-volt-pressed"
+              className="h-10 shrink-0 rounded bg-volt px-5 font-display text-sm font-bold text-volt-ink active:bg-volt-pressed"
             >
               {profileSaved ? "Guardado ✓" : "Guardar perfil"}
             </button>

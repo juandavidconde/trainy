@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveTargetUser } from "@/lib/api-auth";
 import { importPlan, TrainyPlanJson } from "@/lib/trainy-format";
+import { prisma } from "@/lib/prisma";
+import { AthleteProfile, serializeProfile } from "@/lib/profile";
 
 /**
  * POST /api/import/plan
- * Body: { user_email?: string, plan: <plan.json del skill Trainy> }
+ * Body: { user_email?: string, plan: <plan.json del skill Trainy>, perfil?: {...} }
+ * perfil (opcional): edad, sexo, peso, estatura, objetivo, experiencia, lesiones,
+ * notas — el skill Trainy ya conoce al atleta; con esto el Coach IA arranca con
+ * el perfil lleno sin que la persona repita el formulario.
  * Auth: header x-api-key (skill) o sesión (self / coach).
  */
 export async function POST(req: NextRequest) {
-  let body: { user_email?: string; plan?: TrainyPlanJson };
+  let body: { user_email?: string; plan?: TrainyPlanJson; perfil?: AthleteProfile };
   try {
     body = await req.json();
   } catch {
@@ -26,11 +31,23 @@ export async function POST(req: NextRequest) {
 
   try {
     const plan = await importPlan(resolved.user.id, body.plan);
+    let profileImported = false;
+    if (body.perfil) {
+      const serialized = serializeProfile(body.perfil);
+      if (serialized) {
+        await prisma.user.update({
+          where: { id: resolved.user.id },
+          data: { profile: serialized },
+        });
+        profileImported = true;
+      }
+    }
     return NextResponse.json({
       ok: true,
       planId: plan.id,
       name: plan.name,
       user: resolved.user.email,
+      profileImported,
     });
   } catch (e) {
     return NextResponse.json(

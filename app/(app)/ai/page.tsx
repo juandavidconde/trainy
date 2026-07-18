@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { currentUser } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { aiCoachEnabled } from "@/lib/coach-ai";
+import { parseProfile } from "@/lib/profile";
 import CoachChat from "@/components/CoachChat";
 
 export default async function AiCoachPage() {
@@ -14,5 +15,5 @@ export default async function AiCoachPage() {
     select: { profile: true },
   });
 
-  return <CoachChat initialProfile={dbUser?.profile ?? ""} />;
+  return <CoachChat initialProfile={parseProfile(dbUser?.profile)} />;
 }

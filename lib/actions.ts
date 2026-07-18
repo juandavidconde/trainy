@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { currentUser } from "@/auth";
+import { AthleteProfile, serializeProfile } from "@/lib/profile";
 
 export interface SetInput {
   reps: string;
@@ -74,14 +75,13 @@ export async function saveLog(
 }
 
 export async function saveProfile(
-  profile: string
+  profile: AthleteProfile
 ): Promise<{ ok: boolean; error?: string }> {
   const user = await currentUser();
   if (!user) return { ok: false, error: "No autenticado" };
-  const text = (profile ?? "").trim().slice(0, 4000);
   await prisma.user.update({
     where: { id: user.id },
-    data: { profile: text || null },
+    data: { profile: serializeProfile(profile ?? {}) },
   });
   revalidatePath("/ai");
   return { ok: true };
