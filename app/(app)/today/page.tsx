@@ -4,6 +4,7 @@ import { currentUser } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionColor, sessionChipStyle } from "@/lib/brand";
 import ExerciseLogger from "@/components/ExerciseLogger";
+import { buildStartGuide } from "@/lib/prescription";
 import RestTimer from "@/components/RestTimer";
 import ScrollActiveIntoView from "@/components/ScrollActiveIntoView";
 
@@ -109,20 +110,33 @@ export default async function TodayPage({
     plan.sessions[0];
 
   const exerciseIds = selected.exercises.map((e) => e.id);
-  const [logs, prevLogs] = await Promise.all([
+  const [logs, priorLogs] = await Promise.all([
     prisma.workoutLog.findMany({
       where: { userId: user.id, week, exerciseId: { in: exerciseIds } },
       include: { sets: { orderBy: { setIndex: "asc" } } },
     }),
+    // Todo lo anterior a la semana seleccionada: la referencia es la ÚLTIMA
+    // semana registrada de cada ejercicio (no "semana - 1", que tras una
+    // pausa queda vacía).
     week > 1
       ? prisma.workoutLog.findMany({
-          where: { userId: user.id, week: week - 1, exerciseId: { in: exerciseIds } },
+          where: { userId: user.id, week: { lt: week }, exerciseId: { in: exerciseIds } },
           include: { sets: { orderBy: { setIndex: "asc" } } },
+          orderBy: { week: "asc" },
         })
       : Promise.resolve([]),
   ]);
   const logByExercise = new Map(logs.map((l) => [l.exerciseId, l]));
-  const prevByExercise = new Map(prevLogs.map((l) => [l.exerciseId, l]));
+  // Último log con datos por ejercicio (el orderBy asc hace que quede el más reciente)
+  const prevByExercise = new Map(
+    priorLogs.filter((l) => l.sets.length > 0).map((l) => [l.exerciseId, l])
+  );
+  // Para la guía de peso: última semana PESADA (las descargas al 70% no son referencia)
+  const prevHeavyByExercise = new Map(
+    priorLogs
+      .filter((l) => l.sets.length > 0 && !plan.deloadWeeks.includes(l.week))
+      .map((l) => [l.exerciseId, l])
+  );
 
   const isDeload = plan.deloadWeeks.includes(week);
   const isRestDay = !!todayLabel && !todaySession;
@@ -244,6 +258,22 @@ export default async function TodayPage({
               rpe: s.rpe ?? "",
               done: s.done,
             })) ?? [];
+          // Peso más pesado del último registro PESADO, para la guía de arranque
+          const prevHeavy = prevHeavyByExercise.get(ex.id);
+          const lastWeight =
+            prevHeavy?.sets.reduce<{ w: string; n: number } | null>((best, s) => {
+              if (!s.weight) return best;
+              const n = parseFloat((s.weight.match(/\d+(?:[.,]\d+)?/) ?? ["0"])[0].replace(",", "."));
+              return !best || n > best.n ? { w: s.weight, n } : best;
+            }, null)?.w ?? null;
+          const guide = buildStartGuide({
+            progression: ex.progression,
+            week,
+            deloadWeeks: plan.deloadWeeks,
+            startWeight: ex.startWeight,
+            lastWeight,
+            lastWeek: prevHeavy?.week ?? null,
+          });
           const progColor = ex.progression
             ? PROGRESSION_COLORS[ex.progression] ?? "#A08BFF"
             : null;
@@ -287,9 +317,9 @@ export default async function TodayPage({
                   <p className="mt-1 text-xs text-ink-2">{ex.notes}</p>
                 </details>
               )}
-              {prevSets.length > 0 && (
+              {prevSets.length > 0 && prev && (
                 <p className="mt-2 rounded bg-bg px-3 py-1.5 font-mono text-[11px] text-ink-2">
-                  S{week - 1}:{" "}
+                  S{prev.week}:{" "}
                   {prevSets.map((s) => `${s.reps || "-"}·${s.weight || "-"}`).join(" / ")}
                 </p>
               )}
@@ -298,6 +328,7 @@ export default async function TodayPage({
                 exerciseId={ex.id}
                 week={week}
                 progression={ex.progression}
+                guide={guide}
                 initialSets={
                   log?.sets.map((s) => ({
                     reps: s.reps ?? "",

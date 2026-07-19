@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { saveLog, SetInput } from "@/lib/actions";
+import { StartGuide } from "@/lib/prescription";
 
 const EMPTY: SetInput = { reps: "", weight: "", rpe: "", done: false };
 
@@ -16,6 +17,7 @@ export default function ExerciseLogger({
   initialSets,
   initialComment,
   prevSets,
+  guide,
 }: {
   exerciseId: string;
   week: number;
@@ -23,6 +25,7 @@ export default function ExerciseLogger({
   initialSets: SetInput[];
   initialComment: string;
   prevSets: SetInput[];
+  guide?: StartGuide | null;
 }) {
   const [sets, setSets] = useState<SetInput[]>(
     initialSets.length > 0 ? initialSets : emptyRows(prevSets.length || 3)
@@ -95,8 +98,28 @@ export default function ExerciseLogger({
   const inputCls =
     "h-11 min-w-0 rounded border border-line bg-bg px-1 text-center font-mono font-semibold tabular text-ink outline-none placeholder:font-normal placeholder:text-ink-3 focus:border-volt focus:bg-raised md:h-10 md:text-sm";
 
+  // La guía de arranque vive mientras la tarjeta esté vacía; al primer dato, desaparece
+  const untouched =
+    sets.every((s) => !s.reps && !s.weight && !s.rpe && !s.done) && !comment;
+
   return (
     <div className="mt-3 space-y-2">
+      {guide && untouched && (
+        <div className="rounded border border-volt/25 bg-volt/[0.07] px-3 py-2">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-widest text-volt">
+            Guía S{week}
+          </p>
+          <p className="mt-0.5 text-sm font-semibold text-ink">{guide.target}</p>
+          {guide.weight && (
+            <p className="text-sm text-ink-2">
+              Peso: <span className="font-mono font-semibold text-ink">{guide.weight}</span>
+              {guide.basis && (
+                <span className="font-mono text-[11px] text-ink-3"> · ref {guide.basis}</span>
+              )}
+            </p>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-[1fr_1fr_3.2rem_2.9rem_1.4rem] items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-ink-3">
         <span>Reps</span>
         <span>Peso</span>
