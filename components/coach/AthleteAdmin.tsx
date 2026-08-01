@@ -6,6 +6,7 @@ import type { Role } from "@prisma/client";
 import {
   archiveAthletePlan,
   deleteAthlete,
+  resetAthletePassword,
   setAthleteStartDate,
   setRole,
 } from "@/lib/coach-actions";
@@ -52,6 +53,10 @@ export default function AthleteAdmin({
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [typedEmail, setTypedEmail] = useState("");
+
+  // Se muestra una sola vez: no se guarda en claro en ningún lado
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function run(fn: () => Promise<{ ok: boolean; error?: string; info?: string }>) {
     setBusy(true);
@@ -142,6 +147,76 @@ export default function AthleteAdmin({
           </p>
         )}
       </section>
+
+      {!isSelf && role !== "COACH" && (
+        <section className={card}>
+          <h2 className={heading}>Acceso</h2>
+          <p className={hint}>
+            Si perdió la clave, generale una temporal y pasásela por WhatsApp.
+            Se muestra una sola vez — después queda guardada cifrada y ni vos la
+            podés volver a ver. Pedile que la cambie en Ajustes al entrar.
+          </p>
+          {tempPassword ? (
+            <div className="mt-3 rounded border border-volt/30 bg-volt/[0.07] p-3">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-volt">
+                Clave temporal de {email}
+              </p>
+              <p className="mt-1 select-all font-mono text-xl font-bold tracking-wider text-ink">
+                {tempPassword}
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(tempPassword);
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    } catch {
+                      // sin permiso de portapapeles: queda seleccionable a mano
+                    }
+                  }}
+                  className={ghost}
+                >
+                  {copied ? "Copiada ✓" : "Copiar"}
+                </button>
+                <button
+                  onClick={() => setTempPassword(null)}
+                  className={ghost}
+                >
+                  Ya la pasé
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setError(null);
+                setInfo(null);
+                try {
+                  const r = await runAction(() =>
+                    resetAthletePassword(userId)
+                  );
+                  if (!r.ok) {
+                    setError(r.error ?? "No se pudo generar");
+                    return;
+                  }
+                  setTempPassword(
+                    "password" in r ? (r.password ?? null) : null
+                  );
+                  setInfo(r.info ?? null);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              className={`${ghost} mt-3`}
+            >
+              {busy ? "…" : "Generar clave temporal"}
+            </button>
+          )}
+        </section>
+      )}
 
       {!isSelf && role !== "COACH" && (
         <section className="rounded-lg border border-err/30 bg-err/[0.06] p-4">

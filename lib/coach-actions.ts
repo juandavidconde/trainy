@@ -1,5 +1,7 @@
 "use server";
 
+import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -112,6 +114,63 @@ export async function deleteAthlete(
   return {
     ok: true,
     info: `${target.email} borrado, con sus ${target._count.plans} plan(es) y ${target._count.logs} registro(s).`,
+  };
+}
+
+// Alfabeto sin caracteres que se confunden al dictar por teléfono o WhatsApp:
+// nada de 0/O, 1/l/I. La clave se lee en voz alta sin que nadie pregunte "¿ele
+// o uno?".
+const SAFE_CHARS = "abcdefghijkmnpqrstuvwxyz23456789";
+
+function temporaryPassword(): string {
+  const pick = () =>
+    Array.from(
+      { length: 4 },
+      () => SAFE_CHARS[crypto.randomInt(0, SAFE_CHARS.length)]
+    ).join("");
+  return `${pick()}-${pick()}-${pick()}`;
+}
+
+/**
+ * Genera una clave temporal para un atleta que perdió la suya.
+ *
+ * Existe porque esta instancia no manda correos (sin RESEND_API_KEY no hay
+ * código ni reset por mail), así que sin esto la única salida era entrar a la
+ * base a mano. La clave se devuelve UNA vez: no queda guardada en claro en
+ * ningún lado, solo su hash.
+ */
+export async function resetAthletePassword(
+  userId: string
+): Promise<Result & { password?: string }> {
+  const auth = await requireCoach();
+  if (!auth.ok) return auth;
+
+  const target = await prisma.user.findUnique({ where: { id: userId } });
+  if (!target) return { ok: false, error: "No existe esa persona" };
+  if (target.id === auth.me.id) {
+    return {
+      ok: false,
+      error: "Tu propia clave la cambiás desde Ajustes, no desde acá",
+    };
+  }
+  if (target.role === "COACH") {
+    return {
+      ok: false,
+      error:
+        "Es coach: no le podés cambiar la clave. Bajalo a atleta primero si de verdad hace falta.",
+    };
+  }
+
+  const password = temporaryPassword();
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash: await bcrypt.hash(password, 10) },
+  });
+  revalidatePath(`/coach/${userId}`);
+  return {
+    ok: true,
+    password,
+    info: `Clave temporal para ${target.email}. Pasásela y pedile que la cambie en Ajustes.`,
   };
 }
 
