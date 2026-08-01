@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { formatSeconds, readRest, REST_DEFAULT, RestPrefs } from "@/lib/rest";
 
 export default function RestTimer() {
   const [remaining, setRemaining] = useState<number | null>(null);
+  // Las duraciones se configuran en Ajustes → Entrenamiento
+  const [prefs, setPrefs] = useState<RestPrefs>(REST_DEFAULT);
+  const prefsRef = useRef<RestPrefs>(REST_DEFAULT);
   const interval = useRef<ReturnType<typeof setInterval> | null>(null);
   const running = useRef(false);
 
@@ -26,12 +30,26 @@ export default function RestTimer() {
     }, 1000);
   }
 
+  // localStorage no existe en el render del servidor: se lee tras montar
+  useEffect(() => {
+    const apply = (p: RestPrefs) => {
+      prefsRef.current = p;
+      setPrefs(p);
+    };
+    apply(readRest());
+    const onChange = (e: Event) =>
+      apply((e as CustomEvent).detail as RestPrefs);
+    window.addEventListener("trainy:rest-changed", onChange);
+    return () => window.removeEventListener("trainy:rest-changed", onChange);
+  }, []);
+
   useEffect(() => {
     // Al marcar una serie como hecha, el timer arranca solo
     function onSetDone(e: Event) {
       if (running.current) return;
       const progression = (e as CustomEvent).detail?.progression as string | null;
-      start(progression === "COMPOUND" ? 150 : 90);
+      const p = prefsRef.current;
+      start(progression === "COMPOUND" ? p.compound : p.other);
     }
     window.addEventListener("trainy:set-done", onSetDone);
     return () => {
@@ -39,6 +57,9 @@ export default function RestTimer() {
       if (interval.current) clearInterval(interval.current);
     };
   }, []);
+
+  // Sin duplicados si ambas duraciones coinciden
+  const quick = [...new Set([prefs.other, prefs.compound])];
 
   return (
     <div className="fixed bottom-20 right-3 z-30 md:bottom-6 md:right-6">
@@ -58,13 +79,13 @@ export default function RestTimer() {
         </button>
       ) : (
         <div className="flex gap-1.5">
-          {[90, 150].map((s) => (
+          {quick.map((s) => (
             <button
               key={s}
               onClick={() => start(s)}
               className="rounded-xl border border-line-strong bg-raised px-3.5 py-2 font-mono text-xs font-semibold text-ink-2 shadow-floating"
             >
-              ⏱ {s === 90 ? "90s" : "2:30"}
+              ⏱ {formatSeconds(s)}
             </button>
           ))}
         </div>

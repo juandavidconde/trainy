@@ -7,6 +7,10 @@ export interface NavItem {
   href: string;
   label: string;
   icon: "dumbbell" | "calendar" | "chart" | "users" | "spark" | "book";
+  /** Para rutas que se resuelven en el servidor según dónde quedaste
+   *  (/today lee la cookie de posición): prefetchear serviría una versión
+   *  vieja al tocar el link. */
+  noPrefetch?: boolean;
 }
 
 function Icon({ name, active }: { name: NavItem["icon"]; active: boolean }) {
@@ -67,6 +71,7 @@ export function DesktopNav({ items }: { items: NavItem[] }) {
           <Link
             key={item.href}
             href={item.href}
+            prefetch={item.noPrefetch ? false : undefined}
             className={`rounded px-3 py-1.5 font-display text-sm font-bold ${
               active
                 ? "bg-volt/10 text-volt"
@@ -92,6 +97,7 @@ export function BottomNav({ items }: { items: NavItem[] }) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={item.noPrefetch ? false : undefined}
               className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-semibold ${
                 active ? "text-volt" : "text-ink-3 active:text-ink-2"
               }`}

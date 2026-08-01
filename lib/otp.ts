@@ -1,20 +1,26 @@
-// Login con código por email (OTP): recuperación de cuenta y acceso sin
-// contraseña. Envío vía Resend; sin RESEND_API_KEY la función queda oculta.
+// Códigos de un solo uso por email. Dos usos hoy:
+//   "otp"          → login sin contraseña / recuperación de cuenta
+//   "email-change" → confirmar el correo NUEVO desde Ajustes
+// Cada propósito vive en su propio namespace de identifier, así un código
+// pedido para cambiar de correo no sirve para entrar en el login.
+// Envío vía Resend; sin RESEND_API_KEY la función queda oculta.
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 min
 const RESEND_THROTTLE_MS = 60 * 1000; // 1 código por minuto por email
 
+export type CodePurpose = "otp" | "email-change";
+
 export function otpEnabled(): boolean {
   // En dev funciona sin Resend: el código se devuelve en la respuesta (solo dev)
   return !!process.env.RESEND_API_KEY || process.env.NODE_ENV === "development";
 }
 
-function hashCode(email: string, code: string): string {
+function hashCode(email: string, code: string, purpose: CodePurpose): string {
   return crypto
     .createHash("sha256")
-    .update(`${email}:${code}:${process.env.AUTH_SECRET ?? ""}`)
+    .update(`${purpose}:${email}:${code}:${process.env.AUTH_SECRET ?? ""}`)
     .digest("hex");
 }
 
@@ -23,8 +29,25 @@ function hashCode(email: string, code: string): string {
 const failedAttempts = new Map<string, number>();
 const MAX_ATTEMPTS = 5;
 
-async function sendEmail(to: string, code: string): Promise<void> {
+const COPY: Record<CodePurpose, { subject: (c: string) => string; lead: string }> = {
+  otp: {
+    subject: (c) => `${c} es tu código de Trainy`,
+    lead: "Usá este código para entrar. Vence en 10 minutos.",
+  },
+  "email-change": {
+    subject: (c) => `${c} — confirmá tu nuevo correo en Trainy`,
+    lead:
+      "Usá este código para confirmar este correo como el nuevo de tu cuenta. Vence en 10 minutos.",
+  },
+};
+
+async function sendEmail(
+  to: string,
+  code: string,
+  purpose: CodePurpose
+): Promise<void> {
   const from = process.env.EMAIL_FROM ?? "Trainy <onboarding@resend.dev>";
+  const copy = COPY[purpose];
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -34,10 +57,10 @@ async function sendEmail(to: string, code: string): Promise<void> {
     body: JSON.stringify({
       from,
       to,
-      subject: `${code} es tu código de Trainy`,
+      subject: copy.subject(code),
       html: `<div style="font-family:system-ui,sans-serif;max-width:420px;margin:0 auto;padding:24px">
         <h2 style="margin:0 0 4px">Train<span style="color:#84cc16">y</span></h2>
-        <p style="color:#555">Usá este código para entrar. Vence en 10 minutos.</p>
+        <p style="color:#555">${copy.lead}</p>
         <p style="font-size:34px;font-weight:800;letter-spacing:8px;background:#f4f4f5;border-radius:10px;padding:16px;text-align:center">${code}</p>
         <p style="color:#999;font-size:12px">Si no pediste este código, ignorá este correo.</p>
       </div>`,
@@ -50,10 +73,11 @@ async function sendEmail(to: string, code: string): Promise<void> {
 }
 
 export async function requestLoginCode(
-  emailRaw: string
+  emailRaw: string,
+  purpose: CodePurpose = "otp"
 ): Promise<{ ok: true; devCode?: string } | { ok: false; error: string }> {
   const email = emailRaw.trim().toLowerCase();
-  const identifier = `otp:${email}`;
+  const identifier = `${purpose}:${email}`;
 
   // Throttle: si el código vigente se creó hace <1 min, no reenviar
   const existing = await prisma.verificationToken.findFirst({
@@ -69,37 +93,41 @@ export async function requestLoginCode(
   await prisma.verificationToken.create({
     data: {
       identifier,
-      token: hashCode(email, code),
+      token: hashCode(email, code, purpose),
       expires: new Date(Date.now() + CODE_TTL_MS),
     },
   });
-  failedAttempts.delete(email);
+  failedAttempts.delete(identifier);
 
   if (process.env.NODE_ENV === "development" && !process.env.RESEND_API_KEY) {
-    console.log(`[otp] código para ${email}: ${code}`);
+    console.log(`[otp:${purpose}] código para ${email}: ${code}`);
     return { ok: true, devCode: code };
   }
-  await sendEmail(email, code);
+  await sendEmail(email, code, purpose);
   return { ok: true };
 }
 
-export async function verifyLoginCode(emailRaw: string, codeRaw: string): Promise<boolean> {
+export async function verifyLoginCode(
+  emailRaw: string,
+  codeRaw: string,
+  purpose: CodePurpose = "otp"
+): Promise<boolean> {
   const email = emailRaw.trim().toLowerCase();
   const code = codeRaw.trim();
   if (!/^\d{6}$/.test(code)) return false;
 
-  const attempts = failedAttempts.get(email) ?? 0;
+  const identifier = `${purpose}:${email}`;
+  const attempts = failedAttempts.get(identifier) ?? 0;
   if (attempts >= MAX_ATTEMPTS) return false;
 
-  const identifier = `otp:${email}`;
   const token = await prisma.verificationToken.findFirst({
     where: { identifier, expires: { gt: new Date() } },
   });
-  if (!token || token.token !== hashCode(email, code)) {
-    failedAttempts.set(email, attempts + 1);
+  if (!token || token.token !== hashCode(email, code, purpose)) {
+    failedAttempts.set(identifier, attempts + 1);
     return false;
   }
   await prisma.verificationToken.deleteMany({ where: { identifier } });
-  failedAttempts.delete(email);
+  failedAttempts.delete(identifier);
   return true;
 }

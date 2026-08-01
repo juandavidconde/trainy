@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -7,6 +8,9 @@ import ExerciseLogger from "@/components/ExerciseLogger";
 import { buildStartGuide } from "@/lib/prescription";
 import RestTimer from "@/components/RestTimer";
 import ScrollActiveIntoView from "@/components/ScrollActiveIntoView";
+import RememberPosition from "@/components/RememberPosition";
+import { POSITION_COOKIE, isFresh, parsePosition } from "@/lib/position";
+import { clamp, currentWeek } from "@/lib/week";
 
 const DAY_ABBR: Record<string, string> = {
   Lunes: "LUN",
@@ -25,10 +29,6 @@ const PROGRESSION_COLORS: Record<string, string> = {
   LIGHT: "#57D993",
 };
 
-function clamp(n: number, min: number, max: number) {
-  return Math.min(Math.max(n, min), max);
-}
-
 /** Día de la semana en la zona horaria de la instancia (el server corre en UTC). */
 function todayNameInTz(): string {
   const tz = process.env.APP_TZ ?? "America/Bogota";
@@ -37,13 +37,6 @@ function todayNameInTz(): string {
     timeZone: tz,
   }).format(new Date());
   return name.charAt(0).toUpperCase() + name.slice(1);
-}
-
-function currentWeek(startDate: Date | null, weeks: number): number {
-  if (!startDate) return 1;
-  const elapsed =
-    Math.floor((Date.now() - startDate.getTime()) / (7 * 24 * 3600 * 1000)) + 1;
-  return clamp(elapsed, 1, weeks);
 }
 
 export default async function TodayPage({
@@ -57,6 +50,7 @@ export default async function TodayPage({
 
   const plan = await prisma.plan.findFirst({
     where: { userId: user.id, status: "ACTIVE" },
+    orderBy: { createdAt: "desc" },
     include: {
       sessions: {
         orderBy: { order: "asc" },
@@ -94,9 +88,24 @@ export default async function TodayPage({
   }
 
   const thisWeek = currentWeek(plan.startDate, plan.weeks);
+
+  // Si la URL no trae parámetros (abrir el PWA, tocar "Hoy", volver de
+  // Historial), retomamos la última posición mientras siga siendo del mismo
+  // bloque y tenga menos de 6 h. Más vieja que eso ya no es "el entrenamiento
+  // en curso" y arrancamos donde toca hoy.
+  const savedPosition = parsePosition(
+    (await cookies()).get(POSITION_COOKIE)?.value
+  );
+  const resume =
+    !sp.week && !sp.session && isFresh(savedPosition, plan.id)
+      ? savedPosition
+      : null;
+
   const week = sp.week
     ? clamp(parseInt(sp.week, 10) || 1, 1, plan.weeks)
-    : thisWeek;
+    : resume
+      ? clamp(resume.week, 1, plan.weeks)
+      : thisWeek;
 
   const todayName = todayNameInTz();
   const calendar = (plan.calendar ?? {}) as Record<string, string>;
@@ -105,9 +114,13 @@ export default async function TodayPage({
     (s) => todayLabel && s.name.toLowerCase() === todayLabel.toLowerCase()
   );
   const selected =
-    plan.sessions.find((s) => s.name === sp.session) ??
+    plan.sessions.find((s) => s.name === (sp.session ?? resume?.session)) ??
     todaySession ??
     plan.sessions[0];
+
+  // Se está mirando algo que no es el entrenamiento de hoy → ofrecer la vuelta
+  const defaultSession = todaySession ?? plan.sessions[0];
+  const offTrack = week !== thisWeek || selected.id !== defaultSession.id;
 
   const exerciseIds = selected.exercises.map((e) => e.id);
   const [logs, priorLogs] = await Promise.all([
@@ -151,9 +164,19 @@ export default async function TodayPage({
             {[plan.split, plan.objective].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <p className="font-mono text-[11px] text-ink-3">
-          {todayName} · semana actual: S{thisWeek}
-        </p>
+        <div className="text-right">
+          <p className="font-mono text-[11px] text-ink-3">
+            {todayName} · semana actual: S{thisWeek}
+          </p>
+          {offTrack && (
+            <Link
+              href={`/today?week=${thisWeek}&session=${encodeURIComponent(defaultSession.name)}`}
+              className="font-mono text-[11px] text-volt underline-offset-4 hover:underline"
+            >
+              ← ir a lo de hoy
+            </Link>
+          )}
+        </div>
       </div>
 
       {isRestDay && (
@@ -164,7 +187,10 @@ export default async function TodayPage({
       )}
 
       {/* Selector de semana */}
-      <div className="scrollbar-hide -mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+      <div
+        data-hscroll
+        className="scrollbar-hide -mx-4 overflow-x-auto px-4 md:mx-0 md:px-0"
+      >
         <div className="flex w-max items-center gap-1.5 pb-1">
           {Array.from({ length: plan.weeks }, (_, i) => i + 1).map((w) => {
             const isDl = plan.deloadWeeks.includes(w);
@@ -346,6 +372,7 @@ export default async function TodayPage({
       </div>
 
       <RestTimer />
+      <RememberPosition planId={plan.id} week={week} session={selected.name} />
     </div>
   );
 }

@@ -17,6 +17,7 @@ export default async function ProgressPage() {
 
   const plan = await prisma.plan.findFirst({
     where: { userId: user.id, status: "ACTIVE" },
+    orderBy: { createdAt: "desc" },
     include: {
       sessions: {
         orderBy: { order: "asc" },

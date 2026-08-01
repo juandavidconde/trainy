@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
   if (!planId) {
     const active = await prisma.plan.findFirst({
       where: { userId: resolved.user.id, status: "ACTIVE" },
+      orderBy: { createdAt: "desc" },
     });
     if (!active) {
       return NextResponse.json({ error: "Sin plan activo" }, { status: 404 });

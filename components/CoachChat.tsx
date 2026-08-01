@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { saveProfile } from "@/lib/actions";
-import { AthleteProfile, PROFILE_FIELDS, missingRequired } from "@/lib/profile";
+import { AthleteProfile, missingRequired } from "@/lib/profile";
+import ProfileFields from "@/components/ProfileFields";
 
 interface Msg {
   id: string;
@@ -150,45 +151,10 @@ export default function CoachChat({
             skill Trainy, puede venir pre-llenado — revisalo y completá lo que
             falte.
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            {PROFILE_FIELDS.filter((f) => !f.long).map((f) => (
-              <label key={f.key} className="block">
-                <span className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-ink-3">
-                  {f.label}
-                  {f.required && <span className="text-volt"> *</span>}
-                </span>
-                <input
-                  value={profile[f.key] ?? ""}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, [f.key]: e.target.value }))
-                  }
-                  placeholder={f.placeholder}
-                  maxLength={600}
-                  className="h-11 w-full rounded border border-line bg-bg px-3 text-[15px] text-ink outline-none placeholder:text-ink-3/60 focus:border-volt"
-                />
-              </label>
-            ))}
-          </div>
-          <div className="mt-2 space-y-2">
-            {PROFILE_FIELDS.filter((f) => f.long).map((f) => (
-              <label key={f.key} className="block">
-                <span className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-ink-3">
-                  {f.label}
-                  {f.required && <span className="text-volt"> *</span>}
-                </span>
-                <textarea
-                  value={profile[f.key] ?? ""}
-                  onChange={(e) =>
-                    setProfile((p) => ({ ...p, [f.key]: e.target.value }))
-                  }
-                  placeholder={f.placeholder}
-                  rows={2}
-                  maxLength={600}
-                  className="w-full rounded border border-line bg-bg p-3 text-[15px] text-ink outline-none placeholder:text-ink-3/60 focus:border-volt"
-                />
-              </label>
-            ))}
-          </div>
+          <ProfileFields
+            profile={profile}
+            onChange={(patch) => setProfile((p) => ({ ...p, ...patch }))}
+          />
           <div className="mt-3 flex items-center justify-between gap-3">
             <p className="text-xs text-ink-3">
               {missingRequired(profile).length > 0
