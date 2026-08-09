@@ -11,6 +11,9 @@ import ScrollActiveIntoView from "@/components/ScrollActiveIntoView";
 import RememberPosition from "@/components/RememberPosition";
 import { POSITION_COOKIE, isFresh, parsePosition } from "@/lib/position";
 import { clamp, currentWeek } from "@/lib/week";
+import { computeAthleteState } from "@/lib/athlete-state";
+import { collectSignals } from "@/lib/signals";
+import StateBanner from "@/components/StateBanner";
 
 const DAY_ABBR: Record<string, string> = {
   Lunes: "LUN",
@@ -88,6 +91,22 @@ export default async function TodayPage({
   }
 
   const thisWeek = currentWeek(plan.startDate, plan.weeks);
+
+  // Estado real dentro del bloque: si todavía no empezó, si volvió tras una
+  // pausa, o si el bloque ya terminó. Se calcula sobre TODOS sus registros del
+  // plan, no solo los de la sesión que está mirando.
+  const planExerciseIds = plan.sessions.flatMap((s) => s.exercises.map((e) => e.id));
+  const allLogs = await prisma.workoutLog.findMany({
+    where: { userId: user.id, exerciseId: { in: planExerciseIds } },
+    select: {
+      week: true, date: true, updatedAt: true, exerciseId: true, comment: true,
+      exercise: { select: { name: true } },
+    },
+    orderBy: { week: "desc" },
+  });
+  const state = computeAthleteState(plan, allLogs);
+  // Solo lo de las últimas 3 semanas: un dolor de hace dos meses ya no es alerta.
+  const signals = collectSignals(allLogs, { currentWeek: thisWeek, withinWeeks: 3 });
 
   // Si la URL no trae parámetros (abrir el PWA, tocar "Hoy", volver de
   // Historial), retomamos la última posición mientras siga siendo del mismo
@@ -179,12 +198,14 @@ export default async function TodayPage({
         </div>
       </div>
 
-      {isRestDay && (
-        <div className="rounded-lg border border-line bg-card px-4 py-3 text-sm text-ink-2">
-          Hoy toca <span className="font-semibold text-ink">{todayLabel}</span>{" "}
-          según tu calendario. Si igual entrenás, elegí la sesión abajo. 💤
-        </div>
-      )}
+      <StateBanner
+        state={state}
+        isRestDay={isRestDay}
+        restLabel={todayLabel}
+        firstSessionName={defaultSession.name}
+        firstSessionHref={`/today?week=${thisWeek}&session=${encodeURIComponent(defaultSession.name)}`}
+        signals={signals}
+      />
 
       {/* Selector de semana */}
       <div

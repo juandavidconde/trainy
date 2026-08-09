@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { checkEmail, normalizeEmail } from "@/lib/email";
 
 /**
  * POST /api/register — alta con email+password.
@@ -14,10 +15,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const email = body.email?.trim().toLowerCase();
+  const email = normalizeEmail(body.email);
   const password = body.password ?? "";
-  if (!email || !email.includes("@")) {
-    return NextResponse.json({ error: "Email inválido" }, { status: 400 });
+  // El correo es la llave de la cuenta: con lo que entrás y con lo que el coach
+  // te publica los bloques. Un typo acá deja una cuenta muerta e incontactable.
+  const emailCheck = checkEmail(email);
+  if (!emailCheck.ok) {
+    return NextResponse.json(
+      { error: emailCheck.error, suggestion: emailCheck.suggestion },
+      { status: 400 }
+    );
   }
   if (password.length < 8) {
     return NextResponse.json(

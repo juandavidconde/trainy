@@ -2,10 +2,45 @@
 
 // Onboarding = assessment del skill Trainy en versión app: una pregunta por
 // pantalla, termina generando el bloque de 12 semanas.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AthleteProfile } from "@/lib/profile";
 import { saveName, saveProfile } from "@/lib/actions";
+
+// El perfil solo se persistía al generar o al saltar: si la persona cerraba la
+// app o refrescaba en la pantalla 6 de 8, las respuestas se evaporaban y volvía
+// al paso 0 en blanco. Se guarda el borrador en el dispositivo a cada cambio.
+const DRAFT_KEY = "trainy:onboarding-draft:v1";
+
+interface Draft {
+  step: number;
+  name: string;
+  p: AthleteProfile;
+  nivel: string;
+  anios: string;
+  dias: number | null;
+  tiempo: string;
+}
+
+function readDraft(): Draft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as Draft;
+    return d && typeof d === "object" && typeof d.step === "number" ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* modo privado o storage lleno: el borrador es un extra, no rompe el flujo */
+  }
+}
 
 interface Summary {
   nombre: string;
@@ -52,8 +87,35 @@ export default function OnboardingWizard({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [restored, setRestored] = useState(false);
 
   const set = (k: keyof AthleteProfile, v: string) => setP((x) => ({ ...x, [k]: v }));
+
+  // Restaurar el borrador una sola vez, al montar.
+  useEffect(() => {
+    const d = readDraft();
+    if (!d) return;
+    setName((n) => d.name || n);
+    setP((prev) => ({ ...prev, ...d.p }));
+    setNivel(d.nivel ?? "");
+    setAnios(d.anios ?? "");
+    setDias(d.dias ?? null);
+    setTiempo(d.tiempo ?? "");
+    setStep(d.step ?? 0);
+    if (d.step > 0) setRestored(true);
+  }, []);
+
+  // Guardar el borrador a cada cambio.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({ step, name, p, nivel, anios, dias, tiempo } satisfies Draft)
+      );
+    } catch {
+      /* sin storage: seguimos igual, solo se pierde la red de seguridad */
+    }
+  }, [step, name, p, nivel, anios, dias, tiempo]);
 
   const experiencia = useMemo(
     () => (nivel ? `${nivel}${anios.trim() ? ` (${anios.trim()})` : ""}` : p.experiencia ?? ""),
@@ -230,6 +292,7 @@ export default function OnboardingWizard({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "No se pudo generar el plan");
+      clearDraft();
       setSummary(data as Summary);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error inesperado");
@@ -240,6 +303,7 @@ export default function OnboardingWizard({
 
   async function skip() {
     await persistProfile();
+    clearDraft();
     router.push("/today?skip=1");
     router.refresh();
   }
@@ -298,6 +362,28 @@ export default function OnboardingWizard({
           <div key={i} className={`h-1 flex-1 rounded-full ${i <= step ? "bg-volt" : "bg-line"}`} />
         ))}
       </div>
+
+      {restored && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-volt/30 bg-volt/[0.07] px-3 py-2 text-xs">
+          <span className="text-ink-2">Retomamos donde ibas.</span>
+          <button
+            onClick={() => {
+              clearDraft();
+              setRestored(false);
+              setStep(0);
+              setP(initialProfile);
+              setName(initialName);
+              setNivel("");
+              setAnios("");
+              setDias(null);
+              setTiempo("");
+            }}
+            className="shrink-0 text-volt underline-offset-4 hover:underline"
+          >
+            Empezar de nuevo
+          </button>
+        </div>
+      )}
 
       <h1 className="font-display text-2xl font-bold">{current.title}</h1>
       {current.hint && <p className="mt-1.5 text-sm text-ink-2">{current.hint}</p>}

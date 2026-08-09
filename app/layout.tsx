@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
+import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -49,7 +50,10 @@ export default function RootLayout({
       lang="es"
       className={`${display.variable} ${sans.variable} ${mono.variable}`}
     >
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        {children}
+        <ServiceWorkerRegistrar />
+      </body>
     </html>
   );
 }

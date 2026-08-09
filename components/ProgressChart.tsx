@@ -21,7 +21,15 @@ export interface ExerciseSeries {
   points: { week: number; maxWeight: number; est1rm: number | null }[];
 }
 
-export default function ProgressChart({ series }: { series: ExerciseSeries[] }) {
+export default function ProgressChart({
+  series,
+  unit,
+}: {
+  series: ExerciseSeries[];
+  // La unidad viene del bloque, no está fija: el eje decía "kg" aunque el
+  // atleta entrenara entero en libras.
+  unit: "kg" | "lb";
+}) {
   const [selectedId, setSelectedId] = useState(series[0].id);
   const selected = series.find((s) => s.id === selectedId) ?? series[0];
 
@@ -85,7 +93,7 @@ export default function ProgressChart({ series }: { series: ExerciseSeries[] }) 
               <Line
                 type="monotone"
                 dataKey="maxWeight"
-                name="Peso máx (kg)"
+                name={`Peso máx (${unit})`}
                 stroke="#C8F169"
                 strokeWidth={2}
                 dot={{ r: 3, fill: "#C8F169", strokeWidth: 0 }}
@@ -93,7 +101,7 @@ export default function ProgressChart({ series }: { series: ExerciseSeries[] }) 
               <Line
                 type="monotone"
                 dataKey="est1rm"
-                name="1RM estimado"
+                name={`1RM estimado (${unit})`}
                 stroke="#45D0E8"
                 strokeWidth={2}
                 strokeDasharray="6 5"

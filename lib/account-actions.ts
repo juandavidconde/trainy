@@ -7,16 +7,16 @@ import { prisma } from "@/lib/prisma";
 import { currentUser } from "@/auth";
 import { otpEnabled, requestLoginCode, verifyLoginCode } from "@/lib/otp";
 import { POSITION_COOKIE } from "@/lib/position";
-import { dateAtNoonUtc, todayAtNoonUtc } from "@/lib/week";
+import { dateAtNoonUtc, startDateForWeek, todayAtNoonUtc } from "@/lib/week";
+// Una sola definición de "correo válido" en toda la app: acá, en el alta y en
+// el alta que hace el coach. Antes cada lugar tenía su propia regex y la del
+// registro dejaba pasar "noesunemail@".
+import { checkEmail, normalizeEmail } from "@/lib/email";
 
 export type Result = { ok: true; info?: string } | { ok: false; error: string };
 
-function normalizeEmail(raw: string): string {
-  return (raw ?? "").trim().toLowerCase();
-}
-
 function validEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return checkEmail(email).ok;
 }
 
 // ── Correo ────────────────────────────────────────────────────
@@ -161,6 +161,37 @@ export async function saveStartDate(iso: string): Promise<Result> {
   revalidatePath("/settings");
   revalidatePath("/today");
   return { ok: true, info: "Fecha de inicio actualizada." };
+}
+
+/**
+ * Retoma el bloque en la semana indicada, corriendo la fecha de arranque.
+ *
+ * Para el atleta que vuelve tras una pausa: la semana se calculaba solo con la
+ * fecha de inicio, así que tres semanas afuera lo dejaban en S9 con la
+ * prescripción de S9 — desmotivante y, con los pesos de S9 en el cuerpo de
+ * alguien que no toca una barra hace 21 días, riesgoso. Corregirlo ya era
+ * posible en Ajustes, pero había que saber que existía y hacer la cuenta a mano.
+ */
+export async function resumeAtWeek(week: number): Promise<Result> {
+  const user = await currentUser();
+  if (!user) return { ok: false, error: "No autenticado" };
+
+  const plan = await activePlan(user.id);
+  if (!plan) return { ok: false, error: "No tenés un bloque activo" };
+  if (!Number.isInteger(week) || week < 1 || week > plan.weeks) {
+    return { ok: false, error: "Semana fuera del bloque" };
+  }
+
+  await prisma.plan.update({
+    where: { id: plan.id },
+    data: { startDate: startDateForWeek(week) },
+  });
+  (await cookies()).delete(POSITION_COOKIE);
+  revalidatePath("/today");
+  revalidatePath("/settings");
+  revalidatePath("/history");
+  revalidatePath("/progress");
+  return { ok: true, info: `Retomaste en la semana ${week}.` };
 }
 
 /** Borra los registros del bloque activo y lo deja en Semana 1 desde hoy.

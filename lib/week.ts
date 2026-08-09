@@ -8,9 +8,34 @@ export function clamp(n: number, min: number, max: number): number {
 /** Semana en curso del bloque, 1-indexed y acotada al largo del bloque. */
 export function currentWeek(startDate: Date | null, weeks: number): number {
   if (!startDate) return 1;
-  const elapsed =
-    Math.floor((Date.now() - startDate.getTime()) / (7 * 24 * 3600 * 1000)) + 1;
-  return clamp(elapsed, 1, weeks);
+  return clamp(weeksElapsed(startDate), 1, weeks);
+}
+
+/**
+ * Semanas transcurridas desde el arranque, SIN acotar. `currentWeek` está
+ * clampeada al largo del bloque, así que un bloque terminado hace dos meses y
+ * uno que termina hoy devuelven lo mismo (S12) y son indistinguibles: por eso
+ * la app mostraba S12 para siempre sin darse cuenta de que el bloque cerró.
+ */
+export function weeksElapsed(startDate: Date | null): number {
+  if (!startDate) return 1;
+  return Math.floor((Date.now() - startDate.getTime()) / (7 * 24 * 3600 * 1000)) + 1;
+}
+
+/**
+ * Fecha de arranque que deja al atleta en la semana `week` a partir de hoy.
+ * Se usa para retomar donde quedó tras una pausa sin que tenga que hacer la
+ * cuenta a mano en Ajustes.
+ */
+export function startDateForWeek(week: number): Date {
+  const d = todayAtNoonUtc();
+  d.setUTCDate(d.getUTCDate() - (Math.max(1, week) - 1) * 7);
+  return d;
+}
+
+/** `YYYY-MM-DD` de un Date, para los inputs de fecha y `saveStartDate`. */
+export function toIsoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 /**

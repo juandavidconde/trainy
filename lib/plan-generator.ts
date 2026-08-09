@@ -6,24 +6,76 @@ import { TrainyPlanJson, importPlan } from "@/lib/trainy-format";
 
 const MODEL = process.env.COACH_MODEL ?? "claude-sonnet-5";
 
-/** Próximo lunes en la TZ de la instancia (el bloque siempre arranca en lunes). */
-function nextMonday(): string {
-  const tz = process.env.APP_TZ ?? "America/Bogota";
-  const now = new Date();
-  for (let i = 1; i <= 7; i++) {
-    const d = new Date(now.getTime() + i * 24 * 3600 * 1000);
-    const day = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: tz }).format(d);
-    if (day === "Mon") {
-      return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(d); // YYYY-MM-DD
-    }
-  }
-  return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now);
+function tz(): string {
+  return process.env.APP_TZ ?? "America/Bogota";
+}
+
+/**
+ * El bloque arranca HOY, no el lunes siguiente.
+ *
+ * Antes se anclaba al próximo lunes: quien generaba su plan un martes quedaba
+ * con la semana 1 empezando dentro de seis días. Sumado a que el calendario
+ * suele marcar descanso el fin de semana, el estreno del producto era una
+ * pantalla que decía "volvé mañana" — justo en el minuto de más motivación.
+ */
+function startsToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz() }).format(new Date()); // YYYY-MM-DD
+}
+
+const MESES = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+];
+
+/**
+ * Rango de meses del bloque, calculado en código.
+ *
+ * El modelo no sabe qué día es hoy: pedirle el nombre con fechas producía
+ * bloques llamados "Feb-May 2026" o "Nov 2024 - Feb 2025" generados en agosto
+ * de 2026, contradiciendo su propia fecha de inicio. Y es lo primero que el
+ * atleta lee arriba de su pantalla.
+ */
+function blockPeriod(startIso: string, weeks: number): string {
+  const [y, m, d] = startIso.split("-").map(Number);
+  const start = new Date(Date.UTC(y, m - 1, d, 12));
+  const end = new Date(start.getTime() + weeks * 7 * 24 * 3600 * 1000);
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
+  const a = MESES[start.getUTCMonth()];
+  const b = MESES[end.getUTCMonth()];
+  return sameYear
+    ? `${a}-${b} ${start.getUTCFullYear()}`
+    : `${a} ${start.getUTCFullYear()} - ${b} ${end.getUTCFullYear()}`;
+}
+
+/** Compone el nombre final: período real + el tema que puso el modelo. */
+function composeBlockName(
+  modelName: string | undefined,
+  objetivo: string | undefined,
+  startIso: string,
+  weeks: number
+): string {
+  const period = blockPeriod(startIso, weeks);
+  // Se le saca al nombre del modelo cualquier fecha que haya inventado igual.
+  const theme = (modelName ?? "")
+    .replace(/\b(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\w*\b/gi, "")
+    .replace(/\b(19|20)\d{2}\b/g, "")
+    .replace(/[—–-]{1,2}\s*$/g, "")
+    .replace(/^\s*[—–-]{1,2}\s*/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s·,-]+|[\s·,-]+$/g, "")
+    .trim();
+  const tail = theme || objetivo?.trim() || "Bloque";
+  return `${period} — ${tail}`;
 }
 
 const PLAN_SCHEMA = {
   type: "object" as const,
   properties: {
-    nombre_bloque: { type: "string", description: "Ej: 'Ago-Nov 2026 — Hipertrofia'" },
+    nombre_bloque: {
+      type: "string",
+      description:
+        "Tema del bloque en 1-3 palabras, SIN fechas ni meses ni años (el sistema les pone el período). Ej: 'Hipertrofia Base', 'Fuerza en básicos', 'Recomposición runner'",
+    },
     objetivo: { type: "string" },
     split: { type: "string", description: "Ej: 'UPPER / LOWER / PUSH / PULL / LEGS'" },
     dias_semana: { type: "integer" },
@@ -155,7 +207,7 @@ export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson
     messages: [
       {
         role: "user",
-        content: `Diseñá el bloque para este atleta:\n\n${assessment}`,
+        content: `Hoy es ${new Intl.DateTimeFormat("es-CO", { dateStyle: "full", timeZone: tz() }).format(new Date())} y el bloque arranca hoy mismo.\n\nDiseñá el bloque para este atleta:\n\n${assessment}`,
       },
     ],
   });
@@ -169,8 +221,14 @@ export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson
   // Invariantes del sistema — no negociables con el modelo
   plan.semanas = 12;
   plan.descargas = [6, 12];
-  plan.fecha_inicio = nextMonday();
+  plan.fecha_inicio = startsToday();
   plan.usuario = nombre ?? undefined;
+  plan.nombre_bloque = composeBlockName(
+    plan.nombre_bloque,
+    plan.objetivo,
+    plan.fecha_inicio,
+    plan.semanas
+  );
 
   // Saneo: el modelo a veces crea una sesión vacía para "repetir" otra
   // (ej. "FULL A2" sin ejercicios). Se elimina y el calendario apunta a la hermana.

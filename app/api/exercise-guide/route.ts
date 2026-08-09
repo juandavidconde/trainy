@@ -9,6 +9,7 @@ import { guideNameKey } from "@/lib/exercise-pattern";
 
 const MODEL = process.env.COACH_MODEL ?? "claude-sonnet-5";
 const MAX_GENERATIONS_PER_DAY = 30; // por usuario; los hits de caché no cuentan
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const user = await currentUser();
@@ -29,14 +30,17 @@ export async function POST(req: Request) {
     );
   }
 
+  // El límite es POR USUARIO, como decía el comentario y no hacía el código:
+  // antes contaba todas las guías nuevas de la instancia, así que un atleta con
+  // ejercicios poco comunes agotaba la cuota de todos los demás ese día.
   const since = new Date();
   since.setHours(0, 0, 0, 0);
   const generated = await prisma.exerciseGuide.count({
-    where: { createdAt: { gte: since } },
+    where: { createdBy: user.id, createdAt: { gte: since } },
   });
   if (generated >= MAX_GENERATIONS_PER_DAY) {
     return NextResponse.json(
-      { error: "Límite diario de guías nuevas alcanzado — probá mañana" },
+      { error: "Llegaste al límite de guías nuevas por hoy — mañana podés seguir" },
       { status: 429 }
     );
   }
@@ -72,7 +76,7 @@ Máximo ~130 palabras. Si el nombre no corresponde a un ejercicio real de gimnas
   // upsert por si dos usuarios lo piden a la vez
   const saved = await prisma.exerciseGuide.upsert({
     where: { nameKey },
-    create: { nameKey, name, howTo: text },
+    create: { nameKey, name, howTo: text, createdBy: user.id },
     update: {},
   });
 

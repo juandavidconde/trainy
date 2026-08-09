@@ -39,11 +39,19 @@ model User {
 // ── Guía de ejercicios (compartida entre usuarios, sin datos personales) ──
 
 model ExerciseGuide {
-  id        String   @id @default(cuid())
-  nameKey   String   @unique // nombre normalizado (lowercase, sin acentos)
-  name      String // nombre display original
-  howTo     String   @db.Text // técnica generada por el coach (markdown ligero)
+  id      String @id @default(cuid())
+  nameKey String @unique // nombre normalizado (lowercase, sin acentos)
+  name    String // nombre display original
+  howTo   String @db.Text // técnica generada por el coach (markdown ligero)
+  // Quién disparó la generación. El límite diario decía "por usuario" en el
+  // comentario pero contaba TODAS las guías de la instancia: un solo atleta con
+  // ejercicios poco comunes dejaba a los demás sin guías hasta el día siguiente.
+  // Nullable a propósito: las guías ya existentes no tienen autor y el deploy
+  // aplica el cambio con `prisma db push` sin tocar nada.
+  createdBy String?
   createdAt DateTime @default(now())
+
+  @@index([createdBy, createdAt])
 }
 
 // ── Coach IA ──────────────────────────────────────────────────
