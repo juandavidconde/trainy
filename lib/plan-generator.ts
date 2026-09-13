@@ -3,6 +3,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AthleteProfile } from "@/lib/profile";
 import { TrainyPlanJson, importPlan } from "@/lib/trainy-format";
+import { Priority, findPriority } from "@/lib/priority";
 
 const MODEL = process.env.COACH_MODEL ?? "claude-sonnet-5";
 
@@ -121,10 +122,23 @@ const PLAN_SCHEMA = {
   required: ["nombre_bloque", "objetivo", "split", "dias_semana", "tiempo_sesion", "calendario", "sesiones"],
 };
 
-function systemPrompt(): string {
+function systemPrompt(priority: Priority | null): string {
+  // La prioridad muscular MANDA sobre la tabla de splits. Sin esta sección el
+  // modelo aplicaba la tabla genérica y devolvía 3 sesiones de tren superior
+  // contra 2 de pierna a alguien cuyo objetivo declarado era hacer crecer la
+  // pierna.
+  const prioridadBlock = priority
+    ? `## PRIORIDAD DEL ATLETA — manda sobre todo lo demás
+El atleta quiere hacer crecer: **${priority.label}** (${priority.detail}).
+${priority.rule}
+Esta regla tiene precedencia sobre la tabla de splits de abajo: si la tabla sugiere un reparto y la prioridad pide otro, GANA LA PRIORIDAD. El músculo prioritario recibe además el mayor volumen semanal y sus compuestos van primero en la sesión, con el atleta descansado.
+
+`
+    : "";
+
   return `Sos el diseñador de bloques de Trainy: entrenamiento de gimnasio con pesas, periodizado. Diseñás UN bloque de 12 semanas con descargas en S6 y S12 a partir del assessment del atleta. Respondés únicamente llamando la tool publicar_plan.
 
-## Selección de split (días × nivel)
+${prioridadBlock}## Selección de split (días × nivel) — punto de partida, no regla final
 - 3 días: Full Body A/B/A (principiante) · PPL (intermedio+)
 - 4 días: Upper/Lower x2
 - 5 días: PPL + Upper + Lower (recomendado intermedio+)
@@ -136,6 +150,7 @@ Ajustes por deporte activo (OBLIGATORIOS si aplica):
 - Temporada competitiva → cargas de mantenimiento, no progresión agresiva
 
 ## Estructura por sesión (respetar el tiempo disponible)
+- **El PRIMER ejercicio de cada sesión es SIEMPRE el compuesto más pesado y técnico (progresion COMPOUND).** La app arma el calentamiento con series de aproximación sobre ese primer ejercicio, así que no puede ser un aislado ni un accesorio. Nunca abras una sesión con curl, elevaciones laterales, abdominales o máquinas de aislamiento.
 - 1-2 compuestos pesados (progresion COMPOUND) + 2-4 accesorios (HYPER o HYPER_ALTO) + 1-2 aislados/finishers (LIGHT o AMRAP_MYO)
 - 60 min ≈ 5-6 ejercicios · 75 min ≈ 6-7 · 45 min ≈ 4-5
 - Dominadas: si el atleta las domina, incluí dominadas lastradas (progresion DOMINADAS); si no, jalón/pulldown
@@ -158,7 +173,7 @@ Ajustes por deporte activo (OBLIGATORIOS si aplica):
 - Sesiones con nombres en MAYÚSCULAS. Si el split es PPL+UL usá: PUSH, PULL, LEGS, UPPER, LOWER. Full body: FULL A, FULL B, FULL C. Upper/Lower x2: UPPER A, LOWER A, UPPER B, LOWER B.
 - NUNCA definas una sesión sin ejercicios. Si un día repite una sesión (ej. Full Body A/B/A), definí la sesión UNA vez y repetí su nombre en el calendario (Lunes: FULL A, Viernes: FULL A) — no inventes "FULL A2".
 - calendario: los 7 días (Lunes a Domingo), sesiones asignadas según preferencia del atleta y recuperación (no LEGS el día después de LOWER); los libres = "DESCANSO".
-- subtitulo: grupos musculares de la sesión.
+- subtitulo: grupos musculares de la sesión (es lo que el atleta lee para saber qué le toca hoy — ej "Glúteo · Femoral · Core").
 - Todo en español. Nombres de ejercicios claros de gym ("Press inclinado barra (30-45°)", "Remo Pendlay", "Hip thrust barra").
 - El bloque debe ser realista y cumplible: adherencia > perfección.`;
 }
@@ -173,6 +188,7 @@ export interface GenerateInput {
 export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson> {
   const { profile, dias, tiempoSesion, nombre } = input;
   const anthropic = new Anthropic();
+  const priority = findPriority(profile.prioridad);
 
   const assessment = [
     nombre && `Nombre: ${nombre}`,
@@ -181,6 +197,7 @@ export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson
     profile.peso && `Peso: ${profile.peso}`,
     profile.estatura && `Estatura: ${profile.estatura}`,
     profile.objetivo && `Objetivo: ${profile.objetivo}`,
+    profile.prioridad && `QUIERE HACER CRECER (prioridad): ${profile.prioridad}`,
     profile.experiencia && `Experiencia: ${profile.experiencia}`,
     profile.lesiones && `Lesiones/molestias: ${profile.lesiones}`,
     profile.deporte && `Deporte activo además del gym: ${profile.deporte}`,
@@ -195,7 +212,7 @@ export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson
   const res = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 8000,
-    system: systemPrompt(),
+    system: systemPrompt(priority),
     tools: [
       {
         name: "publicar_plan",
@@ -256,7 +273,7 @@ export interface GeneratedSummary {
   planId: string;
   nombre: string;
   split: string | null;
-  sesiones: { name: string; ejercicios: number }[];
+  sesiones: { name: string; ejercicios: number; foco: string | null }[];
   fechaInicio: string;
 }
 
@@ -273,6 +290,7 @@ export async function generateAndImport(
     sesiones: Object.entries(plan.sesiones).map(([name, s]) => ({
       name,
       ejercicios: s.ejercicios.length,
+      foco: s.subtitulo ?? null,
     })),
     fechaInicio: plan.fecha_inicio ?? "",
   };

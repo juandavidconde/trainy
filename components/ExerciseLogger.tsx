@@ -7,8 +7,21 @@ import { enqueue, flush, onReconnect } from "@/lib/offline-log-queue";
 
 const EMPTY: SetInput = { reps: "", weight: "", rpe: "", done: false };
 
-function emptyRows(n: number): SetInput[] {
-  return Array.from({ length: Math.max(n, 1) }, () => ({ ...EMPTY }));
+/**
+ * Completa la grilla hasta las series que pide la prescripción del día.
+ *
+ * Antes se pintaban 3 filas fijas solo cuando NO había nada guardado. Como
+ * `saveLog` recorta las filas vacías del final, quien registraba la serie 1 y
+ * volvía a la pantalla se encontraba con UNA sola fila —las otras dos series
+ * habían desaparecido— y tenía que darle a "+ serie" en cada una. Se veía
+ * sobre todo el primer día, que es cuando nadie tiene registro previo.
+ */
+function withMinRows(rows: SetInput[], min: number): SetInput[] {
+  if (rows.length >= min) return rows;
+  return [
+    ...rows,
+    ...Array.from({ length: min - rows.length }, () => ({ ...EMPTY })),
+  ];
 }
 
 export default function ExerciseLogger({
@@ -28,8 +41,11 @@ export default function ExerciseLogger({
   prevSets: SetInput[];
   guide?: StartGuide | null;
 }) {
-  const [sets, setSets] = useState<SetInput[]>(
-    initialSets.length > 0 ? initialSets : emptyRows(prevSets.length || 3)
+  // Las series que toca hoy según la progresión; si no hay guía, lo que hizo
+  // la última vez, y nunca menos de una fila.
+  const minRows = Math.max(guide?.sets ?? 3, prevSets.length, 1);
+  const [sets, setSets] = useState<SetInput[]>(() =>
+    withMinRows(initialSets, minRows)
   );
   const [comment, setComment] = useState(initialComment);
   const [status, setStatus] = useState<

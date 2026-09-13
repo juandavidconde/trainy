@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { sessionColor } from "@/lib/brand";
 import { currentWeek, daysSince } from "@/lib/week";
 import { parseProfile, PROFILE_FIELDS } from "@/lib/profile";
+import { CONSENT_VERSION } from "@/lib/consent";
 import AthleteAdmin from "@/components/coach/AthleteAdmin";
 
 export default async function CoachUserPage({
@@ -67,6 +68,29 @@ export default async function CoachUserPage({
             : "Sin plan activo"}
           {days !== null &&
             ` · último registro ${days === 0 ? "hoy" : days === 1 ? "ayer" : `hace ${days} días`}`}
+        </p>
+        {/* Trazabilidad del consentimiento: si alguien reclama, la prueba de la
+            autorización es esta fecha con su versión. */}
+        <p className="mt-1 font-mono text-[11px]">
+          {athlete.consentAcceptedAt ? (
+            <span
+              className={
+                athlete.consentVersion === CONSENT_VERSION ? "text-ok" : "text-warn"
+              }
+            >
+              ✓ Autorización de datos ·{" "}
+              {new Intl.DateTimeFormat("es-CO", {
+                dateStyle: "medium",
+                timeZone: "America/Bogota",
+              }).format(athlete.consentAcceptedAt)}
+              {athlete.consentVersion !== CONSENT_VERSION &&
+                ` · versión ${athlete.consentVersion ?? "?"} (vigente: ${CONSENT_VERSION})`}
+            </span>
+          ) : (
+            <span className="text-ink-3">
+              Sin autorización de datos registrada — cuenta anterior al registro
+            </span>
+          )}
         </p>
       </div>
 

@@ -14,12 +14,18 @@ type Mode = "login" | "register" | "code" | "recover";
 export default function LoginForm({
   googleEnabled,
   otpEnabled,
+  initialMode = "login",
+  refCode,
 }: {
   googleEnabled: boolean;
   otpEnabled: boolean;
+  /** "register" cuando se llega desde el botón de la landing (`?nuevo=1`). */
+  initialMode?: Mode;
+  /** Canal por el que llegó el atleta (`?ref=`), para medir de dónde vienen. */
+  refCode?: string;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("login");
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -98,7 +104,7 @@ export default function LoginForm({
         const res = await fetch("/api/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, password }),
+          body: JSON.stringify({ name, email, password, ref: refCode }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => null);

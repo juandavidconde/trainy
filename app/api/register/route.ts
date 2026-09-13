@@ -8,7 +8,7 @@ import { checkEmail, normalizeEmail } from "@/lib/email";
  * El primer usuario de la instancia queda como COACH.
  */
 export async function POST(req: NextRequest) {
-  let body: { email?: string; password?: string; name?: string };
+  let body: { email?: string; password?: string; name?: string; ref?: string };
   try {
     body = await req.json();
   } catch {
@@ -33,6 +33,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Viene del `?ref=` del link de invitación. Se acota porque es texto que
+  // entra por la URL y termina en la base sin pasar por ninguna otra validación.
+  const ref = body.ref?.trim().slice(0, 60) || null;
+
   const passwordHash = await bcrypt.hash(password, 10);
   // Mientras no exista un coach, quien se registre se vuelve coach
   // (el import por API puede pre-crear atletas, no cuentan como "primero").
@@ -50,6 +54,8 @@ export async function POST(req: NextRequest) {
         passwordHash,
         name: body.name?.trim() || existing.name,
         role: coachExists ? existing.role : "COACH",
+        // Solo si no tenía: el primer canal por el que llegó es el que cuenta.
+        ...(ref && !existing.ref ? { ref } : {}),
       },
     });
     return NextResponse.json({ ok: true });
@@ -61,6 +67,7 @@ export async function POST(req: NextRequest) {
       passwordHash,
       name: body.name?.trim() || email.split("@")[0],
       role: coachExists ? "ATHLETE" : "COACH",
+      ref,
     },
   });
   return NextResponse.json({ ok: true });

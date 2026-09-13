@@ -7,6 +7,7 @@ import ProfileSection from "@/components/settings/ProfileSection";
 import AccountSection from "@/components/settings/AccountSection";
 import TrainingSection from "@/components/settings/TrainingSection";
 import DataSection from "@/components/settings/DataSection";
+import ConsentSection from "@/components/settings/ConsentSection";
 import SignOutButton from "@/components/SignOutButton";
 
 export default async function SettingsPage() {
@@ -38,6 +39,11 @@ export default async function SettingsPage() {
         planName={plan?.name ?? null}
         startDateIso={plan?.startDate?.toISOString().slice(0, 10) ?? null}
         weeks={plan?.weeks ?? 12}
+      />
+
+      <ConsentSection
+        acceptedAt={user.consentAcceptedAt}
+        version={user.consentVersion}
       />
 
       <DataSection hasPlan={!!plan} />

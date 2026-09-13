@@ -3,6 +3,7 @@ import { currentUser } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { parseProfile } from "@/lib/profile";
 import { aiCoachEnabled } from "@/lib/coach-ai";
+import { hasCurrentConsent } from "@/lib/consent";
 import OnboardingWizard from "@/components/OnboardingWizard";
 
 export default async function OnboardingPage() {
@@ -11,7 +12,12 @@ export default async function OnboardingPage() {
 
   const dbUser = await prisma.user.findUnique({
     where: { id: user.id },
-    select: { name: true, profile: true },
+    select: {
+      name: true,
+      profile: true,
+      consentAcceptedAt: true,
+      consentVersion: true,
+    },
   });
 
   return (
@@ -20,6 +26,10 @@ export default async function OnboardingPage() {
         initialName={dbUser?.name ?? ""}
         initialProfile={parseProfile(dbUser?.profile)}
         canGenerate={aiCoachEnabled()}
+        alreadyConsented={hasCurrentConsent(
+          dbUser?.consentAcceptedAt,
+          dbUser?.consentVersion
+        )}
       />
     </main>
   );
