@@ -5,7 +5,7 @@ import { currentUser } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionColor, sessionChipStyle } from "@/lib/brand";
 import ExerciseLogger from "@/components/ExerciseLogger";
-import { buildStartGuide } from "@/lib/prescription";
+import { buildStartGuide, buildWarmup } from "@/lib/prescription";
 import RestTimer from "@/components/RestTimer";
 import ScrollActiveIntoView from "@/components/ScrollActiveIntoView";
 import RememberPosition from "@/components/RememberPosition";
@@ -14,6 +14,7 @@ import { clamp, currentWeek } from "@/lib/week";
 import { computeAthleteState } from "@/lib/athlete-state";
 import { collectSignals } from "@/lib/signals";
 import StateBanner from "@/components/StateBanner";
+import WarmupCard from "@/components/WarmupCard";
 
 const DAY_ABBR: Record<string, string> = {
   Lunes: "LUN",
@@ -174,6 +175,43 @@ export default async function TodayPage({
   const isRestDay = !!todayLabel && !todaySession;
   const selectedColor = sessionColor(selected.name, selected.color);
 
+  // La guía se calcula igual para la tarjeta del ejercicio y para el
+  // calentamiento, así que vive en un solo lugar.
+  const guideFor = (ex: (typeof selected.exercises)[number]) => {
+    const prevHeavy = prevHeavyByExercise.get(ex.id);
+    const lastWeight =
+      prevHeavy?.sets.reduce<{ w: string; n: number } | null>((best, s) => {
+        if (!s.weight) return best;
+        const n = parseFloat(
+          (s.weight.match(/\d+(?:[.,]\d+)?/) ?? ["0"])[0].replace(",", ".")
+        );
+        return !best || n > best.n ? { w: s.weight, n } : best;
+      }, null)?.w ?? null;
+    return buildStartGuide({
+      progression: ex.progression,
+      week,
+      deloadWeeks: plan.deloadWeeks,
+      startWeight: ex.startWeight,
+      lastWeight,
+      lastWeek: prevHeavy?.week ?? null,
+    });
+  };
+
+  // Ninguna rutina arrancaba con calentamiento. Se arma sobre el compuesto
+  // pesado de la sesión — el primer ejercicio en los planes nuevos, el primer
+  // COMPOUND en los que se generaron antes de esa regla.
+  const warmupEx =
+    selected.exercises.find((e) => e.progression === "COMPOUND") ??
+    selected.exercises[0];
+  const warmup = warmupEx
+    ? buildWarmup({
+        exerciseName: warmupEx.name,
+        progression: warmupEx.progression,
+        workingWeight: guideFor(warmupEx)?.weight ?? warmupEx.startWeight,
+        isDeload,
+      })
+    : null;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -293,6 +331,9 @@ export default async function TodayPage({
         <p className="text-xs text-ink-3">{selected.subtitle}</p>
       )}
 
+      {/* Calentamiento — series de aproximación sobre el compuesto del día */}
+      {warmup && <WarmupCard warmup={warmup} accent={selectedColor} />}
+
       {/* Ejercicios */}
       <div className="grid gap-3 md:grid-cols-2">
         {selected.exercises.map((ex) => {
@@ -305,22 +346,7 @@ export default async function TodayPage({
               rpe: s.rpe ?? "",
               done: s.done,
             })) ?? [];
-          // Peso más pesado del último registro PESADO, para la guía de arranque
-          const prevHeavy = prevHeavyByExercise.get(ex.id);
-          const lastWeight =
-            prevHeavy?.sets.reduce<{ w: string; n: number } | null>((best, s) => {
-              if (!s.weight) return best;
-              const n = parseFloat((s.weight.match(/\d+(?:[.,]\d+)?/) ?? ["0"])[0].replace(",", "."));
-              return !best || n > best.n ? { w: s.weight, n } : best;
-            }, null)?.w ?? null;
-          const guide = buildStartGuide({
-            progression: ex.progression,
-            week,
-            deloadWeeks: plan.deloadWeeks,
-            startWeight: ex.startWeight,
-            lastWeight,
-            lastWeek: prevHeavy?.week ?? null,
-          });
+          const guide = guideFor(ex);
           const progColor = ex.progression
             ? PROGRESSION_COLORS[ex.progression] ?? "#A08BFF"
             : null;
