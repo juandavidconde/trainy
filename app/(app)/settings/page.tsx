@@ -6,6 +6,7 @@ import { parseProfile } from "@/lib/profile";
 import ProfileSection from "@/components/settings/ProfileSection";
 import AccountSection from "@/components/settings/AccountSection";
 import TrainingSection from "@/components/settings/TrainingSection";
+import ScheduleModeSection from "@/components/settings/ScheduleModeSection";
 import DataSection from "@/components/settings/DataSection";
 import ConsentSection from "@/components/settings/ConsentSection";
 import SignOutButton from "@/components/SignOutButton";
@@ -40,6 +41,8 @@ export default async function SettingsPage() {
         startDateIso={plan?.startDate?.toISOString().slice(0, 10) ?? null}
         weeks={plan?.weeks ?? 12}
       />
+
+      <ScheduleModeSection mode={user.scheduleMode} />
 
       <ConsentSection
         acceptedAt={user.consentAcceptedAt}

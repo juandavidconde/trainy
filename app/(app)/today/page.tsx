@@ -12,6 +12,7 @@ import RememberPosition from "@/components/RememberPosition";
 import { POSITION_COOKIE, isFresh, parsePosition } from "@/lib/position";
 import { clamp, currentWeek } from "@/lib/week";
 import { computeAthleteState } from "@/lib/athlete-state";
+import { nextPendingSession, remainingCount } from "@/lib/schedule";
 import { collectSignals } from "@/lib/signals";
 import StateBanner from "@/components/StateBanner";
 import WarmupCard from "@/components/WarmupCard";
@@ -130,9 +131,37 @@ export default async function TodayPage({
   const todayName = todayNameInTz();
   const calendar = (plan.calendar ?? {}) as Record<string, string>;
   const todayLabel = calendar[todayName] ?? null;
-  const todaySession = plan.sessions.find(
+  const calendarSession = plan.sessions.find(
     (s) => todayLabel && s.name.toLowerCase() === todayLabel.toLowerCase()
   );
+
+  // ── Qué te toca hoy ──────────────────────────────────────────
+  // En modo calendario manda el día. En flexible manda el progreso: la
+  // primera sesión del ciclo sin registrar esta semana. Una sesión cuenta
+  // como hecha cuando tiene al menos una serie, no un log vacío: abrirla y
+  // salir no la completa.
+  const flexible = user.scheduleMode === "FLEXIBLE";
+  const doneThisWeek = flexible
+    ? await prisma.workoutLog.findMany({
+        where: {
+          userId: user.id,
+          week: thisWeek,
+          sets: { some: {} },
+          exerciseId: { in: planExerciseIds },
+        },
+        select: { exercise: { select: { sessionId: true } } },
+      })
+    : [];
+  const doneSessionIds = new Set(
+    doneThisWeek.map((l) => l.exercise.sessionId)
+  );
+  const flexNext = flexible
+    ? nextPendingSession(plan.sessions, doneSessionIds)
+    : null;
+  const todaySession = flexible ? flexNext?.session : calendarSession;
+  const pendingThisWeek = flexible
+    ? remainingCount(plan.sessions, doneSessionIds)
+    : 0;
   const selected =
     plan.sessions.find((s) => s.name === (sp.session ?? resume?.session)) ??
     todaySession ??
@@ -172,7 +201,9 @@ export default async function TodayPage({
   );
 
   const isDeload = plan.deloadWeeks.includes(week);
-  const isRestDay = !!todayLabel && !todaySession;
+  // En flexible no existe el día de descanso: si estás en la app, es día de
+  // entrenar. El descanso lo decide el cuerpo, no el calendario.
+  const isRestDay = !flexible && !!todayLabel && !todaySession;
   const selectedColor = sessionColor(selected.name, selected.color);
 
   // La guía se calcula igual para la tarjeta del ejercicio y para el
@@ -224,13 +255,23 @@ export default async function TodayPage({
         <div className="text-right">
           <p className="font-mono text-[11px] text-ink-3">
             {todayName} · semana actual: S{thisWeek}
+            {flexible && pendingThisWeek > 0 && (
+              <>
+                {" · "}
+                <span className="text-ink-2">
+                  {pendingThisWeek === 1
+                    ? "te falta 1 sesión"
+                    : `te faltan ${pendingThisWeek} sesiones`}
+                </span>
+              </>
+            )}
           </p>
           {offTrack && (
             <Link
               href={`/today?week=${thisWeek}&session=${encodeURIComponent(defaultSession.name)}`}
               className="font-mono text-[11px] text-volt underline-offset-4 hover:underline"
             >
-              ← ir a lo de hoy
+              ← {flexible ? "ir a lo que sigue" : "ir a lo de hoy"}
             </Link>
           )}
         </div>
@@ -286,6 +327,13 @@ export default async function TodayPage({
       </div>
       <ScrollActiveIntoView targetId="week-active" />
 
+      {flexible && flexNext?.weekComplete && (
+        <div className="rounded-lg border border-volt/30 bg-volt/[0.08] px-4 py-2 text-xs text-ink-2">
+          Completaste las {plan.sessions.length} sesiones de la semana 🏆 Si
+          querés entrenar igual, elegí cualquiera abajo.
+        </div>
+      )}
+
       {isDeload && (
         <div className="rounded-lg border border-warn/30 bg-warn/10 px-4 py-2 text-xs text-warn">
           Semana de descarga — bajá volumen/intensidad según tu plan.
@@ -297,7 +345,13 @@ export default async function TodayPage({
         {plan.sessions.map((s) => {
           const active = s.id === selected.id;
           const color = sessionColor(s.name, s.color);
-          const abbr = s.dayOfWeek ? DAY_ABBR[s.dayOfWeek] ?? s.dayOfWeek : null;
+          // El día debajo del nombre solo se muestra en modo calendario: en
+          // flexible sería una regla que la app ya no aplica.
+          const abbr =
+            !flexible && s.dayOfWeek
+              ? DAY_ABBR[s.dayOfWeek] ?? s.dayOfWeek
+              : null;
+          const done = flexible && doneSessionIds.has(s.id);
           return (
             <Link
               key={s.id}
@@ -311,9 +365,14 @@ export default async function TodayPage({
             >
               <span className="text-[13px] font-bold uppercase tracking-widest">
                 {s.name}
-                {todaySession?.id === s.id && (
+                {done && (
                   <span className="ml-1.5 font-mono text-[9px] font-semibold normal-case tracking-normal opacity-80">
-                    hoy
+                    ✓
+                  </span>
+                )}
+                {!done && todaySession?.id === s.id && (
+                  <span className="ml-1.5 font-mono text-[9px] font-semibold normal-case tracking-normal opacity-80">
+                    {flexible ? "sigue" : "hoy"}
                   </span>
                 )}
               </span>

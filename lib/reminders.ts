@@ -115,6 +115,21 @@ export async function buildReminders(): Promise<Reminder[]> {
       continue;
     }
 
+    // En modo flexible no hay día asignado, así que no hay "hoy te toca X".
+    // El disparador natural pasa a ser el tiempo sin entrenar: dos días de
+    // silencio. Por debajo de eso la persona está entrenando normal y el
+    // correo sobra; por encima de INACTIVE_DAYS ya salió el de "se está
+    // cayendo", que tiene prioridad y corta antes de llegar acá.
+    if (u.scheduleMode === "FLEXIBLE") {
+      if (days === null || days < 2) continue;
+      out.push({
+        userId: u.id, email: u.email, name: u.name, kind: "toca-hoy",
+        subject: "Te espera la siguiente sesión",
+        body: `${hi}\n\nLlevás ${days} días sin registrar. Entrá y seguí con la sesión que te falta — semana ${week} de ${plan.weeks}.\n\n${url}/today`,
+      });
+      continue;
+    }
+
     const calendar = (plan.calendar ?? {}) as Record<string, string>;
     const label = calendar[day];
     const isTraining =
