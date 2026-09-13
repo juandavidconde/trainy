@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { currentUser } from "@/auth";
 import { AthleteProfile, serializeProfile } from "@/lib/profile";
+import { CONSENT_VERSION } from "@/lib/consent";
 
 export interface SetInput {
   reps: string;
@@ -95,6 +96,24 @@ export async function saveName(
   const clean = (name ?? "").trim().slice(0, 80);
   if (!clean) return { ok: false, error: "Nombre vacío" };
   await prisma.user.update({ where: { id: user.id }, data: { name: clean } });
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+/**
+ * Sella la autorización de tratamiento de datos.
+ *
+ * Guarda fecha y versión, no un booleano: el Decreto 1377 pide poder probar
+ * después QUÉ fue lo que la persona aceptó y CUÁNDO. Con solo `true` no hay
+ * forma de saber si cubría la política vigente.
+ */
+export async function acceptConsent(): Promise<{ ok: boolean; error?: string }> {
+  const user = await currentUser();
+  if (!user) return { ok: false, error: "No autenticado" };
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { consentAcceptedAt: new Date(), consentVersion: CONSENT_VERSION },
+  });
   revalidatePath("/settings");
   return { ok: true };
 }

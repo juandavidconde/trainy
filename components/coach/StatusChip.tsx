@@ -5,6 +5,9 @@ const STYLE: Record<AthleteStatus, string> = {
   atrasado: "border-warn/40 bg-warn/10 text-warn",
   inactivo: "border-err/40 bg-err/10 text-err",
   "sin-plan": "border-line-strong bg-bg text-ink-3",
+  // Terminó las 12 semanas: no es una alarma, es una oportunidad — y es lo
+  // único del panel que pide una acción concreta del coach.
+  "bloque-terminado": "border-volt/50 bg-volt/10 text-volt",
 };
 
 export default function StatusChip({ status }: { status: AthleteStatus }) {

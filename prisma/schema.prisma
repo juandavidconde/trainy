@@ -34,16 +34,46 @@ model User {
   logs          WorkoutLog[]
   chatMessages  ChatMessage[]
   createdAt     DateTime  @default(now())
+
+  // Autorización de tratamiento de datos (Ley 1581 de 2012).
+  //
+  // Trainy guarda datos de SALUD —lesiones, peso, edad, molestias— que la ley
+  // clasifica como sensibles, y el Decreto 1377 exige que el consentimiento se
+  // capture de un modo que después se pueda probar. Por eso no es un booleano:
+  // se guarda CUÁNDO aceptó y QUÉ versión de la política aceptó. Al cambiar la
+  // política sube la versión, y una aceptación vieja deja de cubrirla.
+  //
+  // Nullable a propósito: los atletas que ya estaban antes de este campo
+  // quedan en null y el deploy lo aplica con `prisma db push` sin tocar nada.
+  consentAcceptedAt DateTime?
+  consentVersion    String?
+
+  // Canal por el que llegó el atleta: el `?ref=` del link de invitación
+  // (`/?ref=whatsapp-mateo`). Sin esto no hay forma de saber cuántos de los que
+  // reciben el link terminan registrando una serie, que es la métrica de
+  // activación que el diagnóstico de agosto dejó abierta.
+  //
+  // Nullable a propósito: las cuentas anteriores quedan en null y el deploy lo
+  // aplica con `prisma db push` sin tocar nada.
+  ref String?
 }
 
 // ── Guía de ejercicios (compartida entre usuarios, sin datos personales) ──
 
 model ExerciseGuide {
-  id        String   @id @default(cuid())
-  nameKey   String   @unique // nombre normalizado (lowercase, sin acentos)
-  name      String // nombre display original
-  howTo     String   @db.Text // técnica generada por el coach (markdown ligero)
+  id      String @id @default(cuid())
+  nameKey String @unique // nombre normalizado (lowercase, sin acentos)
+  name    String // nombre display original
+  howTo   String @db.Text // técnica generada por el coach (markdown ligero)
+  // Quién disparó la generación. El límite diario decía "por usuario" en el
+  // comentario pero contaba TODAS las guías de la instancia: un solo atleta con
+  // ejercicios poco comunes dejaba a los demás sin guías hasta el día siguiente.
+  // Nullable a propósito: las guías ya existentes no tienen autor y el deploy
+  // aplica el cambio con `prisma db push` sin tocar nada.
+  createdBy String?
   createdAt DateTime @default(now())
+
+  @@index([createdBy, createdAt])
 }
 
 // ── Coach IA ──────────────────────────────────────────────────

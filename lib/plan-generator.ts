@@ -3,27 +3,80 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AthleteProfile } from "@/lib/profile";
 import { TrainyPlanJson, importPlan } from "@/lib/trainy-format";
+import { Priority, findPriority } from "@/lib/priority";
 
 const MODEL = process.env.COACH_MODEL ?? "claude-sonnet-5";
 
-/** Próximo lunes en la TZ de la instancia (el bloque siempre arranca en lunes). */
-function nextMonday(): string {
-  const tz = process.env.APP_TZ ?? "America/Bogota";
-  const now = new Date();
-  for (let i = 1; i <= 7; i++) {
-    const d = new Date(now.getTime() + i * 24 * 3600 * 1000);
-    const day = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: tz }).format(d);
-    if (day === "Mon") {
-      return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(d); // YYYY-MM-DD
-    }
-  }
-  return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now);
+function tz(): string {
+  return process.env.APP_TZ ?? "America/Bogota";
+}
+
+/**
+ * El bloque arranca HOY, no el lunes siguiente.
+ *
+ * Antes se anclaba al próximo lunes: quien generaba su plan un martes quedaba
+ * con la semana 1 empezando dentro de seis días. Sumado a que el calendario
+ * suele marcar descanso el fin de semana, el estreno del producto era una
+ * pantalla que decía "volvé mañana" — justo en el minuto de más motivación.
+ */
+function startsToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz() }).format(new Date()); // YYYY-MM-DD
+}
+
+const MESES = [
+  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
+];
+
+/**
+ * Rango de meses del bloque, calculado en código.
+ *
+ * El modelo no sabe qué día es hoy: pedirle el nombre con fechas producía
+ * bloques llamados "Feb-May 2026" o "Nov 2024 - Feb 2025" generados en agosto
+ * de 2026, contradiciendo su propia fecha de inicio. Y es lo primero que el
+ * atleta lee arriba de su pantalla.
+ */
+function blockPeriod(startIso: string, weeks: number): string {
+  const [y, m, d] = startIso.split("-").map(Number);
+  const start = new Date(Date.UTC(y, m - 1, d, 12));
+  const end = new Date(start.getTime() + weeks * 7 * 24 * 3600 * 1000);
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
+  const a = MESES[start.getUTCMonth()];
+  const b = MESES[end.getUTCMonth()];
+  return sameYear
+    ? `${a}-${b} ${start.getUTCFullYear()}`
+    : `${a} ${start.getUTCFullYear()} - ${b} ${end.getUTCFullYear()}`;
+}
+
+/** Compone el nombre final: período real + el tema que puso el modelo. */
+function composeBlockName(
+  modelName: string | undefined,
+  objetivo: string | undefined,
+  startIso: string,
+  weeks: number
+): string {
+  const period = blockPeriod(startIso, weeks);
+  // Se le saca al nombre del modelo cualquier fecha que haya inventado igual.
+  const theme = (modelName ?? "")
+    .replace(/\b(Ene|Feb|Mar|Abr|May|Jun|Jul|Ago|Sep|Oct|Nov|Dic)\w*\b/gi, "")
+    .replace(/\b(19|20)\d{2}\b/g, "")
+    .replace(/[—–-]{1,2}\s*$/g, "")
+    .replace(/^\s*[—–-]{1,2}\s*/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s·,-]+|[\s·,-]+$/g, "")
+    .trim();
+  const tail = theme || objetivo?.trim() || "Bloque";
+  return `${period} — ${tail}`;
 }
 
 const PLAN_SCHEMA = {
   type: "object" as const,
   properties: {
-    nombre_bloque: { type: "string", description: "Ej: 'Ago-Nov 2026 — Hipertrofia'" },
+    nombre_bloque: {
+      type: "string",
+      description:
+        "Tema del bloque en 1-3 palabras, SIN fechas ni meses ni años (el sistema les pone el período). Ej: 'Hipertrofia Base', 'Fuerza en básicos', 'Recomposición runner'",
+    },
     objetivo: { type: "string" },
     split: { type: "string", description: "Ej: 'UPPER / LOWER / PUSH / PULL / LEGS'" },
     dias_semana: { type: "integer" },
@@ -69,10 +122,23 @@ const PLAN_SCHEMA = {
   required: ["nombre_bloque", "objetivo", "split", "dias_semana", "tiempo_sesion", "calendario", "sesiones"],
 };
 
-function systemPrompt(): string {
+function systemPrompt(priority: Priority | null): string {
+  // La prioridad muscular MANDA sobre la tabla de splits. Sin esta sección el
+  // modelo aplicaba la tabla genérica y devolvía 3 sesiones de tren superior
+  // contra 2 de pierna a alguien cuyo objetivo declarado era hacer crecer la
+  // pierna.
+  const prioridadBlock = priority
+    ? `## PRIORIDAD DEL ATLETA — manda sobre todo lo demás
+El atleta quiere hacer crecer: **${priority.label}** (${priority.detail}).
+${priority.rule}
+Esta regla tiene precedencia sobre la tabla de splits de abajo: si la tabla sugiere un reparto y la prioridad pide otro, GANA LA PRIORIDAD. El músculo prioritario recibe además el mayor volumen semanal y sus compuestos van primero en la sesión, con el atleta descansado.
+
+`
+    : "";
+
   return `Sos el diseñador de bloques de Trainy: entrenamiento de gimnasio con pesas, periodizado. Diseñás UN bloque de 12 semanas con descargas en S6 y S12 a partir del assessment del atleta. Respondés únicamente llamando la tool publicar_plan.
 
-## Selección de split (días × nivel)
+${prioridadBlock}## Selección de split (días × nivel) — punto de partida, no regla final
 - 3 días: Full Body A/B/A (principiante) · PPL (intermedio+)
 - 4 días: Upper/Lower x2
 - 5 días: PPL + Upper + Lower (recomendado intermedio+)
@@ -84,6 +150,7 @@ Ajustes por deporte activo (OBLIGATORIOS si aplica):
 - Temporada competitiva → cargas de mantenimiento, no progresión agresiva
 
 ## Estructura por sesión (respetar el tiempo disponible)
+- **El PRIMER ejercicio de cada sesión es SIEMPRE el compuesto más pesado y técnico (progresion COMPOUND).** La app arma el calentamiento con series de aproximación sobre ese primer ejercicio, así que no puede ser un aislado ni un accesorio. Nunca abras una sesión con curl, elevaciones laterales, abdominales o máquinas de aislamiento.
 - 1-2 compuestos pesados (progresion COMPOUND) + 2-4 accesorios (HYPER o HYPER_ALTO) + 1-2 aislados/finishers (LIGHT o AMRAP_MYO)
 - 60 min ≈ 5-6 ejercicios · 75 min ≈ 6-7 · 45 min ≈ 4-5
 - Dominadas: si el atleta las domina, incluí dominadas lastradas (progresion DOMINADAS); si no, jalón/pulldown
@@ -106,7 +173,7 @@ Ajustes por deporte activo (OBLIGATORIOS si aplica):
 - Sesiones con nombres en MAYÚSCULAS. Si el split es PPL+UL usá: PUSH, PULL, LEGS, UPPER, LOWER. Full body: FULL A, FULL B, FULL C. Upper/Lower x2: UPPER A, LOWER A, UPPER B, LOWER B.
 - NUNCA definas una sesión sin ejercicios. Si un día repite una sesión (ej. Full Body A/B/A), definí la sesión UNA vez y repetí su nombre en el calendario (Lunes: FULL A, Viernes: FULL A) — no inventes "FULL A2".
 - calendario: los 7 días (Lunes a Domingo), sesiones asignadas según preferencia del atleta y recuperación (no LEGS el día después de LOWER); los libres = "DESCANSO".
-- subtitulo: grupos musculares de la sesión.
+- subtitulo: grupos musculares de la sesión (es lo que el atleta lee para saber qué le toca hoy — ej "Glúteo · Femoral · Core").
 - Todo en español. Nombres de ejercicios claros de gym ("Press inclinado barra (30-45°)", "Remo Pendlay", "Hip thrust barra").
 - El bloque debe ser realista y cumplible: adherencia > perfección.`;
 }
@@ -121,6 +188,7 @@ export interface GenerateInput {
 export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson> {
   const { profile, dias, tiempoSesion, nombre } = input;
   const anthropic = new Anthropic();
+  const priority = findPriority(profile.prioridad);
 
   const assessment = [
     nombre && `Nombre: ${nombre}`,
@@ -129,6 +197,7 @@ export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson
     profile.peso && `Peso: ${profile.peso}`,
     profile.estatura && `Estatura: ${profile.estatura}`,
     profile.objetivo && `Objetivo: ${profile.objetivo}`,
+    profile.prioridad && `QUIERE HACER CRECER (prioridad): ${profile.prioridad}`,
     profile.experiencia && `Experiencia: ${profile.experiencia}`,
     profile.lesiones && `Lesiones/molestias: ${profile.lesiones}`,
     profile.deporte && `Deporte activo además del gym: ${profile.deporte}`,
@@ -143,7 +212,7 @@ export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson
   const res = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 8000,
-    system: systemPrompt(),
+    system: systemPrompt(priority),
     tools: [
       {
         name: "publicar_plan",
@@ -155,7 +224,7 @@ export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson
     messages: [
       {
         role: "user",
-        content: `Diseñá el bloque para este atleta:\n\n${assessment}`,
+        content: `Hoy es ${new Intl.DateTimeFormat("es-CO", { dateStyle: "full", timeZone: tz() }).format(new Date())} y el bloque arranca hoy mismo.\n\nDiseñá el bloque para este atleta:\n\n${assessment}`,
       },
     ],
   });
@@ -169,8 +238,14 @@ export async function generatePlan(input: GenerateInput): Promise<TrainyPlanJson
   // Invariantes del sistema — no negociables con el modelo
   plan.semanas = 12;
   plan.descargas = [6, 12];
-  plan.fecha_inicio = nextMonday();
+  plan.fecha_inicio = startsToday();
   plan.usuario = nombre ?? undefined;
+  plan.nombre_bloque = composeBlockName(
+    plan.nombre_bloque,
+    plan.objetivo,
+    plan.fecha_inicio,
+    plan.semanas
+  );
 
   // Saneo: el modelo a veces crea una sesión vacía para "repetir" otra
   // (ej. "FULL A2" sin ejercicios). Se elimina y el calendario apunta a la hermana.
@@ -198,7 +273,7 @@ export interface GeneratedSummary {
   planId: string;
   nombre: string;
   split: string | null;
-  sesiones: { name: string; ejercicios: number }[];
+  sesiones: { name: string; ejercicios: number; foco: string | null }[];
   fechaInicio: string;
 }
 
@@ -215,6 +290,7 @@ export async function generateAndImport(
     sesiones: Object.entries(plan.sesiones).map(([name, s]) => ({
       name,
       ejercicios: s.ejercicios.length,
+      foco: s.subtitulo ?? null,
     })),
     fechaInicio: plan.fecha_inicio ?? "",
   };

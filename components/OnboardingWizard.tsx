@@ -2,15 +2,60 @@
 
 // Onboarding = assessment del skill Trainy en versión app: una pregunta por
 // pantalla, termina generando el bloque de 12 semanas.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AthleteProfile } from "@/lib/profile";
-import { saveName, saveProfile } from "@/lib/actions";
+import { acceptConsent, saveName, saveProfile } from "@/lib/actions";
+import { CONSENT_SUMMARY, CONSENT_VERSION } from "@/lib/consent";
+import { LiftMarks, parseMarks, serializeMarks } from "@/lib/key-lifts";
+import { PRIORIDADES, countFocused, findPriority } from "@/lib/priority";
+import KeyLiftsStep from "@/components/KeyLiftsStep";
+
+// El perfil solo se persistía al generar o al saltar: si la persona cerraba la
+// app o refrescaba en la pantalla 6 de 8, las respuestas se evaporaban y volvía
+// al paso 0 en blanco. Se guarda el borrador en el dispositivo a cada cambio.
+// v2: el borrador ahora incluye las marcas por ejercicio y la prioridad
+// muscular. Un draft v1 a medio llenar no sabe de esos campos, así que se
+// descarta en vez de restaurarse incompleto.
+const DRAFT_KEY = "trainy:onboarding-draft:v2";
+
+interface Draft {
+  step: number;
+  name: string;
+  p: AthleteProfile;
+  nivel: string;
+  anios: string;
+  dias: number | null;
+  tiempo: string;
+  marks: LiftMarks;
+}
+
+function readDraft(): Draft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as Draft;
+    return d && typeof d === "object" && typeof d.step === "number" ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+    window.localStorage.removeItem("trainy:onboarding-draft:v1");
+  } catch {
+    /* modo privado o storage lleno: el borrador es un extra, no rompe el flujo */
+  }
+}
 
 interface Summary {
   nombre: string;
   split: string | null;
-  sesiones: { name: string; ejercicios: number }[];
+  sesiones: { name: string; ejercicios: number; foco?: string | null }[];
   fechaInicio: string;
 }
 
@@ -36,10 +81,13 @@ export default function OnboardingWizard({
   initialName,
   initialProfile,
   canGenerate,
+  alreadyConsented,
 }: {
   initialName: string;
   initialProfile: AthleteProfile;
   canGenerate: boolean;
+  /** Ya aceptó la versión vigente de la política — no se le vuelve a pedir. */
+  alreadyConsented: boolean;
 }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -49,18 +97,128 @@ export default function OnboardingWizard({
   const [anios, setAnios] = useState("");
   const [dias, setDias] = useState<number | null>(null);
   const [tiempo, setTiempo] = useState("");
+  const [marks, setMarks] = useState<LiftMarks>(() => parseMarks(initialProfile.prs));
+  // El consentimiento NO va al borrador de localStorage: una autorización de
+  // tratamiento de datos se da en el momento, no se restaura de una caché del
+  // navegador donde cualquiera pudo haberla dejado marcada.
+  const [consent, setConsent] = useState(alreadyConsented);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [restored, setRestored] = useState(false);
 
   const set = (k: keyof AthleteProfile, v: string) => setP((x) => ({ ...x, [k]: v }));
+  const setMark = (key: string, patch: Partial<LiftMarks[string]>) =>
+    setMarks((m) => ({
+      ...m,
+      [key]: { ...(m[key] ?? { reps: "", lb: "" }), ...patch },
+    }));
+
+  // Restaurar el borrador una sola vez, al montar.
+  useEffect(() => {
+    const d = readDraft();
+    if (!d) return;
+    setName((n) => d.name || n);
+    setP((prev) => ({ ...prev, ...d.p }));
+    setNivel(d.nivel ?? "");
+    setAnios(d.anios ?? "");
+    setDias(d.dias ?? null);
+    setTiempo(d.tiempo ?? "");
+    if (d.marks) setMarks(d.marks);
+    setStep(d.step ?? 0);
+    if (d.step > 0) setRestored(true);
+  }, []);
+
+  // Guardar el borrador a cada cambio.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({ step, name, p, nivel, anios, dias, tiempo, marks } satisfies Draft)
+      );
+    } catch {
+      /* sin storage: seguimos igual, solo se pierde la red de seguridad */
+    }
+  }, [step, name, p, nivel, anios, dias, tiempo, marks]);
 
   const experiencia = useMemo(
     () => (nivel ? `${nivel}${anios.trim() ? ` (${anios.trim()})` : ""}` : p.experiencia ?? ""),
     [nivel, anios, p.experiencia]
   );
 
+  // Las marcas viajan como texto en `prs` — el mismo campo que ya leía el
+  // generador. La estructura vive en el wizard, no en el contrato.
+  //
+  // Si el paso queda en blanco no se pisa lo que ya había: los perfiles
+  // anteriores guardaron sus PRs como texto libre ("Banca 8×135 lb"), que
+  // `parseMarks` no puede mapear a los ejercicios del catálogo. Rehacer el
+  // onboarding sin llenar nada los borraría.
+  const profile = useMemo<AthleteProfile>(() => {
+    const marcas = serializeMarks(marks);
+    return { ...p, experiencia, prs: marcas || p.prs || "" };
+  }, [p, experiencia, marks]);
+
   const steps: { title: string; hint?: string; valid: boolean; body: React.ReactNode }[] = [
+    // Va PRIMERO y es bloqueante: los pasos siguientes ya piden datos de salud,
+    // y la autorización tiene que existir antes de recogerlos, no después.
+    ...(alreadyConsented
+      ? []
+      : [
+          {
+            title: "Antes de empezar",
+            hint: "Trainy necesita datos tuyos para armarte el plan. Esto es lo que hacemos con ellos.",
+            valid: consent,
+            body: (
+              <div className="space-y-3">
+                <ul className="space-y-2">
+                  {CONSENT_SUMMARY.map((line) => (
+                    <li key={line} className="flex gap-2 text-[14px] leading-snug text-ink-2">
+                      <span className="text-volt">·</span>
+                      <span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Link
+                  href="/legal"
+                  target="_blank"
+                  className="block text-sm text-volt underline-offset-4 hover:underline"
+                >
+                  Leer la política completa ↗
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={() => setConsent((c) => !c)}
+                  aria-pressed={consent}
+                  className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
+                    consent
+                      ? "border-volt bg-volt/10"
+                      : "border-line bg-surface active:bg-raised"
+                  }`}
+                >
+                  <span
+                    className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs font-bold ${
+                      consent
+                        ? "border-volt bg-volt text-volt-ink"
+                        : "border-line-strong text-transparent"
+                    }`}
+                  >
+                    ✓
+                  </span>
+                  <span className="text-[14px] leading-snug text-ink">
+                    Autorizo el tratamiento de mis datos personales, incluidos
+                    los datos de salud, en los términos de la política.
+                  </span>
+                </button>
+
+                <p className="font-mono text-[10px] uppercase tracking-wider text-ink-3">
+                  Versión {CONSENT_VERSION} · Ley 1581 de 2012
+                </p>
+              </div>
+            ),
+          },
+        ]),
     {
       title: name ? `Hola, ${name.split(" ")[0]} 👋` : "Empecemos",
       hint: "Tu coach usa esto para diseñar un bloque de pesas de 12 semanas hecho a tu medida. Toma 2 minutos.",
@@ -118,6 +276,25 @@ export default function OnboardingWizard({
           {OBJETIVOS.map((o) => (
             <button key={o} onClick={() => set("objetivo", o)} className={chip(p.objetivo === o)}>
               {o}
+            </button>
+          ))}
+        </div>
+      ),
+    },
+    {
+      title: "¿Qué querés hacer crecer?",
+      hint: "Esto decide cuántas sesiones de cada tipo lleva tu semana. Si querés pierna, la mayoría de los días van a ser de pierna.",
+      valid: !!p.prioridad?.trim(),
+      body: (
+        <div className="space-y-2">
+          {PRIORIDADES.map((pr) => (
+            <button
+              key={pr.key}
+              onClick={() => set("prioridad", pr.label)}
+              className={`block w-full ${chip(p.prioridad === pr.label)}`}
+            >
+              <span className="font-semibold">{pr.label}</span>
+              <span className="ml-2 text-sm text-ink-3">{pr.detail}</span>
             </button>
           ))}
         </div>
@@ -193,18 +370,21 @@ export default function OnboardingWizard({
       ),
     },
     {
-      title: "¿Conocés tus marcas?",
-      hint: "Opcional pero valioso: con PRs reales el peso de arranque queda clavado.",
+      title: "¿Con cuánto peso trabajás?",
+      hint: "Poné las repeticiones que hacés y con cuánto peso, aunque sea aproximado. Con esto el peso de arranque de tus 12 semanas queda clavado; sin esto se estima. Si no conocés un ejercicio, dejalo en blanco.",
       valid: true,
       body: (
-        <textarea
-          value={p.prs ?? ""}
-          onChange={(e) => set("prs", e.target.value)}
-          placeholder={"Ej:\nBanca 8×135 lb\nSentadilla 10×185 lb\nDominadas 12×BW"}
-          rows={4}
-          className={inputCls}
-          maxLength={400}
-        />
+        <div className="space-y-3">
+          {/* Perfiles viejos guardaban las marcas como texto libre; que no
+              parezca que se perdieron por estrenar el paso nuevo. */}
+          {Object.keys(marks).length === 0 && p.prs?.trim() && (
+            <p className="rounded border border-line bg-card px-3 py-2 text-xs text-ink-3">
+              Ya teníamos esto anotado:{" "}
+              <span className="font-mono text-ink-2">{p.prs}</span>
+            </p>
+          )}
+          <KeyLiftsStep marks={marks} onChange={setMark} />
+        </div>
       ),
     },
   ];
@@ -213,8 +393,22 @@ export default function OnboardingWizard({
   const current = steps[step];
 
   async function persistProfile(): Promise<boolean> {
+    // El consentimiento se sella ANTES de escribir nada: si falla, no se
+    // guardan datos de salud sin autorización registrada. Cubre también el
+    // botón de saltar, que igual persiste el perfil.
+    if (!alreadyConsented) {
+      if (!consent) {
+        setError("Necesitamos tu autorización para tratar tus datos antes de seguir.");
+        return false;
+      }
+      const c = await acceptConsent();
+      if (!c.ok) {
+        setError(c.error ?? "No se pudo registrar la autorización");
+        return false;
+      }
+    }
     if (name.trim() && name !== initialName) await saveName(name);
-    const r = await saveProfile({ ...p, experiencia });
+    const r = await saveProfile(profile);
     return r.ok;
   }
 
@@ -222,14 +416,15 @@ export default function OnboardingWizard({
     setError(null);
     setGenerating(true);
     try {
-      await persistProfile();
+      if (!(await persistProfile())) return;
       const res = await fetch("/api/generate-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: { ...p, experiencia }, dias, tiempoSesion: tiempo }),
+        body: JSON.stringify({ profile, dias, tiempoSesion: tiempo }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "No se pudo generar el plan");
+      clearDraft();
       setSummary(data as Summary);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error inesperado");
@@ -239,13 +434,21 @@ export default function OnboardingWizard({
   }
 
   async function skip() {
-    await persistProfile();
+    // Saltar el onboarding igual guarda el perfil, así que también exige la
+    // autorización: si no, la salida de emergencia era el hueco por donde
+    // entraban datos de salud sin consentimiento.
+    if (!(await persistProfile())) return;
+    clearDraft();
     router.push("/today?skip=1");
     router.refresh();
   }
 
   // ── Pantallas terminales ────────────────────────────────────
   if (summary) {
+    // Que la prioridad se vea CUMPLIDA, no solo prometida: acá se cuenta
+    // cuántas de las sesiones generadas atienden lo que la persona pidió.
+    const prioridad = findPriority(p.prioridad);
+    const enfocadas = countFocused(prioridad, summary.sesiones);
     return (
       <div className="flex min-h-[80dvh] flex-col justify-center text-center">
         <p className="font-display text-4xl">🏆</p>
@@ -254,11 +457,25 @@ export default function OnboardingWizard({
           <span className="font-semibold text-ink">{summary.nombre}</span>
           {summary.split && <> · {summary.split}</>}
         </p>
-        <div className="mx-auto mt-5 w-full max-w-xs space-y-1.5 text-left">
+        {prioridad && (
+          <p className="mx-auto mt-4 w-full max-w-xs rounded-lg border border-volt/30 bg-volt/[0.07] px-3 py-2 text-sm text-ink-2">
+            Prioridad <span className="font-semibold text-volt">{prioridad.label}</span>
+            {enfocadas !== null && (
+              <>
+                {" "}
+                — {enfocadas} de {summary.sesiones.length} sesiones
+              </>
+            )}
+          </p>
+        )}
+        <div className="mx-auto mt-3 w-full max-w-xs space-y-1.5 text-left">
           {summary.sesiones.map((s) => (
-            <div key={s.name} className="flex justify-between rounded border border-line bg-surface px-3 py-2 text-sm">
-              <span className="font-display font-bold">{s.name}</span>
-              <span className="text-ink-3">{s.ejercicios} ejercicios</span>
+            <div key={s.name} className="rounded border border-line bg-surface px-3 py-2 text-sm">
+              <div className="flex justify-between">
+                <span className="font-display font-bold">{s.name}</span>
+                <span className="text-ink-3">{s.ejercicios} ejercicios</span>
+              </div>
+              {s.foco && <p className="mt-0.5 text-xs text-ink-3">{s.foco}</p>}
             </div>
           ))}
         </div>
@@ -298,6 +515,29 @@ export default function OnboardingWizard({
           <div key={i} className={`h-1 flex-1 rounded-full ${i <= step ? "bg-volt" : "bg-line"}`} />
         ))}
       </div>
+
+      {restored && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-volt/30 bg-volt/[0.07] px-3 py-2 text-xs">
+          <span className="text-ink-2">Retomamos donde ibas.</span>
+          <button
+            onClick={() => {
+              clearDraft();
+              setRestored(false);
+              setStep(0);
+              setP(initialProfile);
+              setName(initialName);
+              setNivel("");
+              setAnios("");
+              setDias(null);
+              setTiempo("");
+              setMarks(parseMarks(initialProfile.prs));
+            }}
+            className="shrink-0 text-volt underline-offset-4 hover:underline"
+          >
+            Empezar de nuevo
+          </button>
+        </div>
+      )}
 
       <h1 className="font-display text-2xl font-bold">{current.title}</h1>
       {current.hint && <p className="mt-1.5 text-sm text-ink-2">{current.hint}</p>}
@@ -339,9 +579,13 @@ export default function OnboardingWizard({
             </button>
           )}
         </div>
-        <button onClick={skip} className="mt-3 w-full text-center text-sm text-ink-3 underline-offset-4 hover:underline">
-          Ya tengo coach — saltar por ahora
-        </button>
+        {/* En el paso de la autorización no hay salida: saltarlo guardaría el
+            perfil igual, y eso es justo lo que no puede pasar. */}
+        {!(!alreadyConsented && step === 0) && (
+          <button onClick={skip} className="mt-3 w-full text-center text-sm text-ink-3 underline-offset-4 hover:underline">
+            Ya tengo coach — saltar por ahora
+          </button>
+        )}
       </div>
     </div>
   );

@@ -3,18 +3,29 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { checkEmail } from "@/lib/email";
 
-type Mode = "login" | "register" | "code";
+// "recover" existe para que NUNCA haya un callejón sin salida: si la instancia
+// no tiene Resend configurado no se puede mandar un código, pero el coach sí
+// puede generar una clave temporal desde su panel. Antes, quien olvidaba la
+// contraseña simplemente no tenía a dónde ir — y no volvía.
+type Mode = "login" | "register" | "code" | "recover";
 
 export default function LoginForm({
   googleEnabled,
   otpEnabled,
+  initialMode = "login",
+  refCode,
 }: {
   googleEnabled: boolean;
   otpEnabled: boolean;
+  /** "register" cuando se llega desde el botón de la landing (`?nuevo=1`). */
+  initialMode?: Mode;
+  /** Canal por el que llegó el atleta (`?ref=`), para medir de dónde vienen. */
+  refCode?: string;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("login");
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,14 +33,21 @@ export default function LoginForm({
   const [codeSent, setCodeSent] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   function switchMode(m: Mode) {
     setMode(m);
     setError(null);
     setInfo(null);
+    setSuggestion(null);
     setCodeSent(false);
     setCode("");
+  }
+
+  /** El botón de recuperar lleva al código si se puede, y si no, a la salida real. */
+  function startRecovery() {
+    switchMode(otpEnabled ? "code" : "recover");
   }
 
   async function requestCode() {
@@ -60,6 +78,7 @@ export default function LoginForm({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuggestion(null);
     setBusy(true);
     try {
       if (mode === "code") {
@@ -74,14 +93,23 @@ export default function LoginForm({
         return;
       }
       if (mode === "register") {
+        // Se valida en el cliente para dar la corrección antes de crear nada,
+        // y otra vez en el servidor porque el cliente no es una garantía.
+        const check = checkEmail(email);
+        if (!check.ok) {
+          setError(check.error ?? "Revisá tu correo");
+          setSuggestion(check.suggestion ?? null);
+          return;
+        }
         const res = await fetch("/api/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, password }),
+          body: JSON.stringify({ name, email, password, ref: refCode }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => null);
           setError(data?.error ?? "No se pudo crear la cuenta");
+          setSuggestion(data?.suggestion ?? null);
           return;
         }
       }
@@ -90,7 +118,6 @@ export default function LoginForm({
         setError("Email o contraseña incorrectos");
         return;
       }
-      // Cuenta nueva → directo al onboarding; login normal → Hoy
       router.push(mode === "register" ? "/onboarding" : "/today");
       router.refresh();
     } finally {
@@ -109,6 +136,50 @@ export default function LoginForm({
         : codeSent
           ? "Entrar con código"
           : "Enviarme un código";
+
+  // ── Recuperación sin correo configurado ─────────────────────
+  if (mode === "recover") {
+    return (
+      <div className="space-y-4">
+        <div className="space-y-3 rounded-lg border border-line bg-card p-5">
+          <h2 className="font-display text-lg font-bold">Recuperar tu cuenta</h2>
+          <p className="text-sm leading-relaxed text-ink-2">
+            Esta instancia todavía no manda códigos por correo, así que la clave la
+            reestablece tu coach: la genera en un toque desde su panel y te la pasa.
+          </p>
+          <ol className="space-y-2 text-sm text-ink-2">
+            <li className="flex gap-2.5">
+              <span className="font-mono text-xs text-volt">1</span>
+              <span>Escribile a tu coach y pedile una clave temporal.</span>
+            </li>
+            <li className="flex gap-2.5">
+              <span className="font-mono text-xs text-volt">2</span>
+              <span>
+                Decile con qué correo entrás
+                {email.trim() && (
+                  <>
+                    {" — "}
+                    <span className="font-mono text-ink">{email.trim()}</span>
+                  </>
+                )}
+                .
+              </span>
+            </li>
+            <li className="flex gap-2.5">
+              <span className="font-mono text-xs text-volt">3</span>
+              <span>Entrá con esa clave y cambiala en Ajustes.</span>
+            </li>
+          </ol>
+        </div>
+        <button
+          onClick={() => switchMode("login")}
+          className="h-12 w-full rounded-lg border border-line-strong text-ink-2 active:bg-raised"
+        >
+          Volver
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -147,6 +218,11 @@ export default function LoginForm({
           className={inputCls}
           disabled={mode === "code" && codeSent}
         />
+        {mode === "register" && (
+          <p className="text-xs leading-relaxed text-ink-3">
+            Con este correo entrás y tu coach te publica los bloques. Revisá que esté bien escrito.
+          </p>
+        )}
         {mode !== "code" && (
           <input
             type="password"
@@ -174,6 +250,19 @@ export default function LoginForm({
         )}
         {info && <p className="text-sm text-ink-2">{info}</p>}
         {error && <p className="text-sm text-err">{error}</p>}
+        {suggestion && (
+          <button
+            type="button"
+            onClick={() => {
+              setEmail(suggestion);
+              setError(null);
+              setSuggestion(null);
+            }}
+            className="w-full rounded-lg border border-volt/40 bg-volt/10 px-3 py-2 text-sm text-volt"
+          >
+            Usar {suggestion}
+          </button>
+        )}
         <button
           type="submit"
           disabled={busy}
@@ -194,6 +283,15 @@ export default function LoginForm({
       </form>
 
       <div className="space-y-2 pt-1 text-center text-sm">
+        {/* Siempre presente: es la única salida de quien no puede entrar. */}
+        {mode !== "code" && (
+          <button
+            onClick={startRecovery}
+            className="w-full text-ink-2 underline-offset-4 hover:underline"
+          >
+            ¿Olvidaste tu contraseña?
+          </button>
+        )}
         <button
           onClick={() => switchMode(mode === "login" ? "register" : "login")}
           className="w-full text-ink-2 underline-offset-4 hover:underline"
@@ -202,14 +300,6 @@ export default function LoginForm({
             ? "¿Primera vez? Crear cuenta"
             : "Ya tengo cuenta — entrar"}
         </button>
-        {otpEnabled && mode !== "code" && (
-          <button
-            onClick={() => switchMode("code")}
-            className="w-full text-ink-3 underline-offset-4 hover:underline"
-          >
-            Entrar con código al correo (sin contraseña)
-          </button>
-        )}
         {mode === "code" && (
           <button
             onClick={() => switchMode("login")}

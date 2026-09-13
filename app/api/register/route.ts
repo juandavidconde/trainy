@@ -1,23 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { checkEmail, normalizeEmail } from "@/lib/email";
 
 /**
  * POST /api/register — alta con email+password.
  * El primer usuario de la instancia queda como COACH.
  */
 export async function POST(req: NextRequest) {
-  let body: { email?: string; password?: string; name?: string };
+  let body: { email?: string; password?: string; name?: string; ref?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const email = body.email?.trim().toLowerCase();
+  const email = normalizeEmail(body.email);
   const password = body.password ?? "";
-  if (!email || !email.includes("@")) {
-    return NextResponse.json({ error: "Email inválido" }, { status: 400 });
+  // El correo es la llave de la cuenta: con lo que entrás y con lo que el coach
+  // te publica los bloques. Un typo acá deja una cuenta muerta e incontactable.
+  const emailCheck = checkEmail(email);
+  if (!emailCheck.ok) {
+    return NextResponse.json(
+      { error: emailCheck.error, suggestion: emailCheck.suggestion },
+      { status: 400 }
+    );
   }
   if (password.length < 8) {
     return NextResponse.json(
@@ -25,6 +32,10 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  // Viene del `?ref=` del link de invitación. Se acota porque es texto que
+  // entra por la URL y termina en la base sin pasar por ninguna otra validación.
+  const ref = body.ref?.trim().slice(0, 60) || null;
 
   const passwordHash = await bcrypt.hash(password, 10);
   // Mientras no exista un coach, quien se registre se vuelve coach
@@ -43,6 +54,8 @@ export async function POST(req: NextRequest) {
         passwordHash,
         name: body.name?.trim() || existing.name,
         role: coachExists ? existing.role : "COACH",
+        // Solo si no tenía: el primer canal por el que llegó es el que cuenta.
+        ...(ref && !existing.ref ? { ref } : {}),
       },
     });
     return NextResponse.json({ ok: true });
@@ -54,6 +67,7 @@ export async function POST(req: NextRequest) {
       passwordHash,
       name: body.name?.trim() || email.split("@")[0],
       role: coachExists ? "ATHLETE" : "COACH",
+      ref,
     },
   });
   return NextResponse.json({ ok: true });

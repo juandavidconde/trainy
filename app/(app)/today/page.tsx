@@ -5,12 +5,16 @@ import { currentUser } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { sessionColor, sessionChipStyle } from "@/lib/brand";
 import ExerciseLogger from "@/components/ExerciseLogger";
-import { buildStartGuide } from "@/lib/prescription";
+import { buildStartGuide, buildWarmup } from "@/lib/prescription";
 import RestTimer from "@/components/RestTimer";
 import ScrollActiveIntoView from "@/components/ScrollActiveIntoView";
 import RememberPosition from "@/components/RememberPosition";
 import { POSITION_COOKIE, isFresh, parsePosition } from "@/lib/position";
 import { clamp, currentWeek } from "@/lib/week";
+import { computeAthleteState } from "@/lib/athlete-state";
+import { collectSignals } from "@/lib/signals";
+import StateBanner from "@/components/StateBanner";
+import WarmupCard from "@/components/WarmupCard";
 
 const DAY_ABBR: Record<string, string> = {
   Lunes: "LUN",
@@ -89,6 +93,22 @@ export default async function TodayPage({
 
   const thisWeek = currentWeek(plan.startDate, plan.weeks);
 
+  // Estado real dentro del bloque: si todavía no empezó, si volvió tras una
+  // pausa, o si el bloque ya terminó. Se calcula sobre TODOS sus registros del
+  // plan, no solo los de la sesión que está mirando.
+  const planExerciseIds = plan.sessions.flatMap((s) => s.exercises.map((e) => e.id));
+  const allLogs = await prisma.workoutLog.findMany({
+    where: { userId: user.id, exerciseId: { in: planExerciseIds } },
+    select: {
+      week: true, date: true, updatedAt: true, exerciseId: true, comment: true,
+      exercise: { select: { name: true } },
+    },
+    orderBy: { week: "desc" },
+  });
+  const state = computeAthleteState(plan, allLogs);
+  // Solo lo de las últimas 3 semanas: un dolor de hace dos meses ya no es alerta.
+  const signals = collectSignals(allLogs, { currentWeek: thisWeek, withinWeeks: 3 });
+
   // Si la URL no trae parámetros (abrir el PWA, tocar "Hoy", volver de
   // Historial), retomamos la última posición mientras siga siendo del mismo
   // bloque y tenga menos de 6 h. Más vieja que eso ya no es "el entrenamiento
@@ -155,6 +175,43 @@ export default async function TodayPage({
   const isRestDay = !!todayLabel && !todaySession;
   const selectedColor = sessionColor(selected.name, selected.color);
 
+  // La guía se calcula igual para la tarjeta del ejercicio y para el
+  // calentamiento, así que vive en un solo lugar.
+  const guideFor = (ex: (typeof selected.exercises)[number]) => {
+    const prevHeavy = prevHeavyByExercise.get(ex.id);
+    const lastWeight =
+      prevHeavy?.sets.reduce<{ w: string; n: number } | null>((best, s) => {
+        if (!s.weight) return best;
+        const n = parseFloat(
+          (s.weight.match(/\d+(?:[.,]\d+)?/) ?? ["0"])[0].replace(",", ".")
+        );
+        return !best || n > best.n ? { w: s.weight, n } : best;
+      }, null)?.w ?? null;
+    return buildStartGuide({
+      progression: ex.progression,
+      week,
+      deloadWeeks: plan.deloadWeeks,
+      startWeight: ex.startWeight,
+      lastWeight,
+      lastWeek: prevHeavy?.week ?? null,
+    });
+  };
+
+  // Ninguna rutina arrancaba con calentamiento. Se arma sobre el compuesto
+  // pesado de la sesión — el primer ejercicio en los planes nuevos, el primer
+  // COMPOUND en los que se generaron antes de esa regla.
+  const warmupEx =
+    selected.exercises.find((e) => e.progression === "COMPOUND") ??
+    selected.exercises[0];
+  const warmup = warmupEx
+    ? buildWarmup({
+        exerciseName: warmupEx.name,
+        progression: warmupEx.progression,
+        workingWeight: guideFor(warmupEx)?.weight ?? warmupEx.startWeight,
+        isDeload,
+      })
+    : null;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -179,12 +236,14 @@ export default async function TodayPage({
         </div>
       </div>
 
-      {isRestDay && (
-        <div className="rounded-lg border border-line bg-card px-4 py-3 text-sm text-ink-2">
-          Hoy toca <span className="font-semibold text-ink">{todayLabel}</span>{" "}
-          según tu calendario. Si igual entrenás, elegí la sesión abajo. 💤
-        </div>
-      )}
+      <StateBanner
+        state={state}
+        isRestDay={isRestDay}
+        restLabel={todayLabel}
+        firstSessionName={defaultSession.name}
+        firstSessionHref={`/today?week=${thisWeek}&session=${encodeURIComponent(defaultSession.name)}`}
+        signals={signals}
+      />
 
       {/* Selector de semana */}
       <div
@@ -272,6 +331,9 @@ export default async function TodayPage({
         <p className="text-xs text-ink-3">{selected.subtitle}</p>
       )}
 
+      {/* Calentamiento — series de aproximación sobre el compuesto del día */}
+      {warmup && <WarmupCard warmup={warmup} accent={selectedColor} />}
+
       {/* Ejercicios */}
       <div className="grid gap-3 md:grid-cols-2">
         {selected.exercises.map((ex) => {
@@ -284,22 +346,7 @@ export default async function TodayPage({
               rpe: s.rpe ?? "",
               done: s.done,
             })) ?? [];
-          // Peso más pesado del último registro PESADO, para la guía de arranque
-          const prevHeavy = prevHeavyByExercise.get(ex.id);
-          const lastWeight =
-            prevHeavy?.sets.reduce<{ w: string; n: number } | null>((best, s) => {
-              if (!s.weight) return best;
-              const n = parseFloat((s.weight.match(/\d+(?:[.,]\d+)?/) ?? ["0"])[0].replace(",", "."));
-              return !best || n > best.n ? { w: s.weight, n } : best;
-            }, null)?.w ?? null;
-          const guide = buildStartGuide({
-            progression: ex.progression,
-            week,
-            deloadWeeks: plan.deloadWeeks,
-            startWeight: ex.startWeight,
-            lastWeight,
-            lastWeek: prevHeavy?.week ?? null,
-          });
+          const guide = guideFor(ex);
           const progColor = ex.progression
             ? PROGRESSION_COLORS[ex.progression] ?? "#A08BFF"
             : null;

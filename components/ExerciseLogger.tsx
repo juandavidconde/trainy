@@ -3,11 +3,25 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { saveLog, SetInput } from "@/lib/actions";
 import { StartGuide } from "@/lib/prescription";
+import { enqueue, flush, onReconnect } from "@/lib/offline-log-queue";
 
 const EMPTY: SetInput = { reps: "", weight: "", rpe: "", done: false };
 
-function emptyRows(n: number): SetInput[] {
-  return Array.from({ length: Math.max(n, 1) }, () => ({ ...EMPTY }));
+/**
+ * Completa la grilla hasta las series que pide la prescripción del día.
+ *
+ * Antes se pintaban 3 filas fijas solo cuando NO había nada guardado. Como
+ * `saveLog` recorta las filas vacías del final, quien registraba la serie 1 y
+ * volvía a la pantalla se encontraba con UNA sola fila —las otras dos series
+ * habían desaparecido— y tenía que darle a "+ serie" en cada una. Se veía
+ * sobre todo el primer día, que es cuando nadie tiene registro previo.
+ */
+function withMinRows(rows: SetInput[], min: number): SetInput[] {
+  if (rows.length >= min) return rows;
+  return [
+    ...rows,
+    ...Array.from({ length: min - rows.length }, () => ({ ...EMPTY })),
+  ];
 }
 
 export default function ExerciseLogger({
@@ -27,16 +41,21 @@ export default function ExerciseLogger({
   prevSets: SetInput[];
   guide?: StartGuide | null;
 }) {
-  const [sets, setSets] = useState<SetInput[]>(
-    initialSets.length > 0 ? initialSets : emptyRows(prevSets.length || 3)
+  // Las series que toca hoy según la progresión; si no hay guía, lo que hizo
+  // la última vez, y nunca menos de una fila.
+  const minRows = Math.max(guide?.sets ?? 3, prevSets.length, 1);
+  const [sets, setSets] = useState<SetInput[]>(() =>
+    withMinRows(initialSets, minRows)
   );
   const [comment, setComment] = useState(initialComment);
-  const [status, setStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">(
-    "idle"
-  );
+  const [status, setStatus] = useState<
+    "idle" | "dirty" | "saving" | "saved" | "error" | "queued"
+  >("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [undo, setUndo] = useState<{ index: number; set: SetInput } | null>(null);
   const [, startTransition] = useTransition();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef({ sets, comment });
   latest.current = { sets, comment };
 
@@ -45,12 +64,18 @@ export default function ExerciseLogger({
     setErrorMsg(null);
     startTransition(async () => {
       const { sets: s, comment: c } = latest.current;
-      const res = await saveLog(exerciseId, week, s, c);
-      if (res.ok) {
-        setStatus("saved");
-      } else {
+      try {
+        const res = await saveLog(exerciseId, week, s, c);
+        if (res.ok) {
+          setStatus("saved");
+          return;
+        }
         setStatus("error");
         setErrorMsg(res.error ?? "Error guardando");
+      } catch {
+        // Sin red: la serie NO se pierde. Queda en el teléfono y sube sola.
+        enqueue({ exerciseId, week, sets: s, comment: c });
+        setStatus("queued");
       }
     });
   }
@@ -65,11 +90,48 @@ export default function ExerciseLogger({
   useEffect(() => {
     return () => {
       if (timer.current) clearTimeout(timer.current);
+      if (undoTimer.current) clearTimeout(undoTimer.current);
     };
+  }, []);
+
+  // Al volver la señal se sube todo lo que quedó pendiente, de esta tarjeta y
+  // de cualquier otra de la sesión.
+  useEffect(() => {
+    const sync = async () => {
+      const left = await flush(saveLog);
+      if (left === 0) setStatus((s) => (s === "queued" ? "saved" : s));
+    };
+    const off = onReconnect(sync);
+    if (typeof navigator !== "undefined" && navigator.onLine) void sync();
+    return off;
   }, []);
 
   function update(i: number, patch: Partial<SetInput>) {
     setSets((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+    markDirty();
+  }
+
+  /** Quita una serie guardando lo borrado para poder devolverlo. */
+  function removeSet(i: number) {
+    setSets((prev) => {
+      if (prev.length <= 1) return prev;
+      setUndo({ index: i, set: prev[i] });
+      return prev.filter((_, idx) => idx !== i);
+    });
+    markDirty();
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setUndo(null), 8000);
+  }
+
+  function undoRemove() {
+    if (!undo) return;
+    setSets((prev) => {
+      const next = [...prev];
+      next.splice(Math.min(undo.index, next.length), 0, undo.set);
+      return next;
+    });
+    setUndo(null);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
     markDirty();
   }
 
@@ -116,6 +178,15 @@ export default function ExerciseLogger({
               {guide.basis && (
                 <span className="font-mono text-[11px] text-ink-3"> · ref {guide.basis}</span>
               )}
+            </p>
+          )}
+          {/* El mejor atajo de la app era invisible: marcar ✓ en una fila vacía
+              copia reps y peso de la última vez, y convierte una sesión de 48
+              interacciones en 12 toques. Nadie lo descubría solo. */}
+          {prevSets.length > 0 && (
+            <p className="mt-1 text-xs text-ink-3">
+              Tocá <span className="font-semibold text-ink-2">✓</span> y se copian las
+              reps y el peso de la última vez. Cambiá solo lo que sea distinto.
             </p>
           )}
         </div>
@@ -165,21 +236,33 @@ export default function ExerciseLogger({
           >
             ✓
           </button>
+          {/* Borrar una serie es lo único destructivo de esta pantalla y estaba
+              a 6 px del ✓, con 22×24 px, sin confirmación y sin deshacer: manos
+              sudadas, celular en una mano, entre series. Ahora ocupa el toque
+              mínimo y se puede revertir. */}
           <button
             type="button"
-            onClick={() => {
-              setSets((prev) =>
-                prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev
-              );
-              markDirty();
-            }}
-            className="text-center text-ink-3 hover:text-err"
+            onClick={() => removeSet(i)}
+            className="flex h-11 w-11 items-center justify-center text-ink-3 active:text-err md:h-10 md:w-10"
             aria-label="Quitar serie"
           >
             ×
           </button>
         </div>
       ))}
+
+      {undo && (
+        <div className="flex items-center justify-between gap-2 rounded border border-line-strong bg-raised px-3 py-2 text-xs">
+          <span className="text-ink-2">Quitaste una serie.</span>
+          <button
+            type="button"
+            onClick={undoRemove}
+            className="shrink-0 font-semibold text-volt underline-offset-4 hover:underline"
+          >
+            Deshacer
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <button
@@ -209,12 +292,25 @@ export default function ExerciseLogger({
           className={`h-9 shrink-0 rounded px-4 text-xs font-bold ${
             status === "saved"
               ? "bg-ok/15 text-ok"
-              : "bg-volt text-volt-ink active:bg-volt-pressed"
+              : status === "queued"
+                ? "bg-warn/15 text-warn"
+                : "bg-volt text-volt-ink active:bg-volt-pressed"
           }`}
         >
-          {status === "saving" ? "…" : status === "saved" ? "✓ Guardado" : "Guardar"}
+          {status === "saving"
+            ? "…"
+            : status === "saved"
+              ? "✓ Guardado"
+              : status === "queued"
+                ? "En el teléfono"
+                : "Guardar"}
         </button>
       </div>
+      {status === "queued" && (
+        <p className="text-right text-[11px] text-warn">
+          Sin señal — queda guardado acá y sube solo cuando vuelva.
+        </p>
+      )}
       {status === "error" && <p className="text-xs text-err">{errorMsg}</p>}
       {status === "dirty" && (
         <p className="text-right font-mono text-[10px] text-ink-3">

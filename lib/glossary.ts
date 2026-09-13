@@ -10,6 +10,17 @@ export interface GlossaryEntry {
 
 export const GLOSSARY: GlossaryEntry[] = [
   {
+    term: "Series de aproximación",
+    aka: "Warm-up sets / ramp-up",
+    def: "Las series con las que te acercás al peso de trabajo antes de la primera serie real. Arrancás liviano y vas subiendo carga mientras bajás las repeticiones: el músculo entra en temperatura, la articulación se lubrica y el sistema nervioso «ensaya» el movimiento con el peso pesado antes de tener que sostenerlo. No van al fallo ni cerca — si terminás cansada, el calentamiento está mal hecho. Tampoco se registran: no suman volumen ni cuentan como progreso.",
+    example:
+      "Si tu serie de trabajo es sentadilla 12×100 lb → 40 lb × 10 · 60 lb × 8 · 80 lb × 4 · 90 lb × 2, y recién ahí las series de verdad.",
+  },
+  {
+    term: "Calentamiento",
+    def: "Las dos partes que van antes de cada sesión: 3-5 minutos de cardio suave y movilidad de la articulación que vas a usar, y después las series de aproximación sobre el ejercicio pesado del día. En Trainy aparece arriba de cada sesión, ya calculado con tu peso de trabajo. Saltárselo no te ahorra tiempo: te cuesta reps en la primera serie y es donde se producen la mayoría de las molestias.",
+  },
+  {
     term: "RPE",
     aka: "Rating of Perceived Exertion",
     def: "Escala de esfuerzo del 1 al 10. RPE 7 = te quedaban 3 repeticiones en el tanque; RPE 8 = 2; RPE 9 = 1; RPE 10 = fallo, no salía ni una más. En Trainy los compuestos se trabajan a RPE 7-8: pesado pero nunca al fallo.",

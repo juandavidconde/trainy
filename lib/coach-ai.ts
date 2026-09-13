@@ -2,25 +2,27 @@
 // El dossier se reconstruye en cada mensaje: siempre refleja el estado real de la DB.
 import { prisma } from "@/lib/prisma";
 import { missingRequired, parseProfile, profileToText } from "@/lib/profile";
+import { collectSignals, SIGNAL_LABEL } from "@/lib/signals";
+// Una sola definición de la semana en curso y una sola de cómo se lee un peso.
+// Este archivo tenía copias propias de las dos: el e1RM del dossier salía de
+// tomar el primer número del string, así que "20 kg c/u" valía 20 y "BW+15"
+// valía 15 — y el Coach IA razonaba sobre esos números como si fueran la carga.
+import { currentWeek } from "@/lib/week";
+import {
+  bodyweightKgFromProfile,
+  comparableLoad,
+  dominantUnit,
+  estimate1RM,
+  formatLoad,
+  parseReps,
+  parseWeight,
+} from "@/lib/weight";
 
 export function aiCoachEnabled(): boolean {
   return !!process.env.ANTHROPIC_API_KEY;
 }
 
-export function currentWeek(startDate: Date | null, weeks: number): number {
-  if (!startDate) return 1;
-  const elapsed =
-    Math.floor((Date.now() - startDate.getTime()) / (7 * 24 * 3600 * 1000)) + 1;
-  return Math.min(Math.max(elapsed, 1), weeks);
-}
-
-function num(s: string | null): number | null {
-  if (!s) return null;
-  const m = s.match(/[\d.]+/);
-  if (!m) return null;
-  const v = parseFloat(m[0]);
-  return Number.isFinite(v) ? v : null;
-}
+export { currentWeek };
 
 /** Semanas de historial reciente que se incluyen set por set. */
 const RECENT_WEEKS = 4;
@@ -66,6 +68,17 @@ export async function buildDossier(userId: string): Promise<string> {
   }
 
   const week = currentWeek(plan.startDate, plan.weeks);
+
+  // Unidad del bloque y peso corporal del atleta: sin esto, comparar "20 kg c/u"
+  // con "115 lb" y con "BW+15" no tiene sentido.
+  const bodyweightKg = bodyweightKgFromProfile(profile.peso);
+  const unit = dominantUnit(
+    plan.sessions.flatMap((s) =>
+      s.exercises.flatMap((e) => e.logs.flatMap((l) => l.sets.map((set) => set.weight)))
+    ),
+    plan.sessions.flatMap((s) => s.exercises.map((e) => e.startWeight))
+  );
+
   out.push(
     `\n## Bloque activo: "${plan.name}"`,
     [
@@ -101,6 +114,36 @@ export async function buildDossier(userId: string): Promise<string> {
     recentWeeks.size > 0
       ? [...recentWeeks].sort((a, b) => a - b).map((w) => `S${w}`).join(", ")
       : "ninguna todavía";
+  // Los avisos de dolor iban enterrados dentro del historial, mezclados con
+  // comentarios de logística. Acá se levantan al frente para que el coach los
+  // trate como lo que son: la única señal del dossier que puede terminar en
+  // una lesión.
+  const signals = collectSignals(
+    plan.sessions.flatMap((s) =>
+      s.exercises.flatMap((e) =>
+        e.logs.map((l) => ({
+          week: l.week,
+          comment: l.comment,
+          date: l.date,
+          exercise: { name: e.name },
+        }))
+      )
+    ),
+    { currentWeek: week, withinWeeks: 4 }
+  );
+  if (signals.length > 0) {
+    out.push(
+      `\n## ⚠️ Avisos del atleta (últimas 4 semanas)`,
+      ...signals
+        .slice(0, 8)
+        .map(
+          (s) =>
+            `- [${SIGNAL_LABEL[s.kind]}] S${s.week}${s.exerciseName ? ` · ${s.exerciseName}` : ""}: "${s.text}"`
+        ),
+      `Si el aviso es de dolor o de una serie que tuvo que cortar, abordalo ANTES que cualquier otra cosa que te pregunte.`
+    );
+  }
+
   out.push(
     `\n## Prescripción e historial (sets de las últimas semanas registradas: ${weeksLabel}; formato set: reps×peso@RPE, ✓=completada)`
   );
@@ -119,17 +162,22 @@ export async function buildDossier(userId: string): Promise<string> {
       out.push(`- **${ex.name}**${spec ? ` (${spec})` : ""}`);
       if (ex.notes) out.push(`  Nota del plan: ${ex.notes}`);
 
-      // Mejor e1RM de todo el bloque
+      // Mejor e1RM de todo el bloque, con la carga bien interpretada:
+      // "c/u" cuenta doble, "BW+15" suma el peso corporal, y los pesos se
+      // llevan todos a la misma unidad antes de compararlos.
       let best: { label: string; score: number } | null = null;
       for (const log of ex.logs) {
         for (const set of log.sets) {
-          const w = num(set.weight);
-          const r = num(set.reps);
-          if (w !== null && r !== null && r > 0) {
-            const e = w * (1 + r / 30);
-            if (!best || e > best.score) {
-              best = { label: `${set.reps}×${set.weight} (S${log.week}, e1RM≈${Math.round(e)})`, score: e };
-            }
+          const load = comparableLoad(parseWeight(set.weight), unit, bodyweightKg);
+          const reps = parseReps(set.reps);
+          if (load === null || reps === null) continue;
+          const e = estimate1RM(load, reps);
+          if (e === null) continue;
+          if (!best || e > best.score) {
+            best = {
+              label: `${set.reps}×${set.weight} (S${log.week}, e1RM≈${formatLoad(e, unit)})`,
+              score: e,
+            };
           }
         }
       }
