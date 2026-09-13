@@ -56,6 +56,19 @@ model User {
   // Nullable a propósito: las cuentas anteriores quedan en null y el deploy lo
   // aplica con `prisma db push` sin tocar nada.
   ref String?
+
+  // Cómo decide la app qué te toca hoy.
+  //
+  // CALENDAR: el calendario del plan manda. Si hoy dice DESCANSO, la app te
+  // trata como si no fuera día de entrenar aunque estés parado en el gym.
+  // FLEXIBLE: no hay días fijos. La app te ofrece la siguiente sesión que te
+  // falta del ciclo y todo día es entrenable. El calendario del plan queda
+  // como sugerencia, no como regla.
+  //
+  // Default FLEXIBLE porque la semana de la mayoría se mueve, y un calendario
+  // rígido solo cambia CUÁL día está equivocado. Quien entrena en días fijos
+  // lo vuelve a CALENDAR desde Ajustes.
+  scheduleMode ScheduleMode @default(FLEXIBLE)
 }
 
 // ── Guía de ejercicios (compartida entre usuarios, sin datos personales) ──
@@ -124,6 +137,11 @@ model VerificationToken {
 }
 
 // ── Plan de entrenamiento (bloque) ────────────────────────────
+
+enum ScheduleMode {
+  CALENDAR
+  FLEXIBLE
+}
 
 enum PlanStatus {
   ACTIVE

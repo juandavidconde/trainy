@@ -131,3 +131,24 @@ export async function saveProfile(
   revalidatePath("/settings");
   return { ok: true };
 }
+
+/**
+ * Cambia entre calendario fijo y modo flexible.
+ *
+ * Es preferencia del atleta, no del plan: el mismo bloque lo puede seguir
+ * alguien con días fijos y alguien cuya semana se mueve. Guardarlo en el plan
+ * habría obligado a regenerarlo para cambiar de modo.
+ */
+export async function setScheduleMode(
+  mode: "CALENDAR" | "FLEXIBLE"
+): Promise<{ ok: boolean; error?: string }> {
+  const user = await currentUser();
+  if (!user) return { ok: false, error: "No autenticado" };
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { scheduleMode: mode },
+  });
+  revalidatePath("/settings");
+  revalidatePath("/today");
+  return { ok: true };
+}
